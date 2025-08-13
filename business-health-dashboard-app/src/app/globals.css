@@ -1,0 +1,329 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+  
+  body {
+    @apply text-gray-900 dark:text-gray-100;
+  }
+  
+  /* Custom scrollbar styles */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  
+  ::-webkit-scrollbar-track {
+    @apply bg-gray-100 dark:bg-gray-800;
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    @apply bg-gray-300 dark:bg-gray-600 rounded-full;
+  }
+  
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-gray-400 dark:bg-gray-500;
+  }
+  
+  /* Firefox scrollbar */
+  html {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(156 163 175) rgb(243 244 246);
+  }
+  
+  html.dark {
+    scrollbar-color: rgb(75 85 99) rgb(31 41 55);
+  }
+}
+
+@layer components {
+  /* Button components */
+  .btn-primary {
+    @apply inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200;
+  }
+  
+  .btn-secondary {
+    @apply inline-flex items-center justify-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 dark:border-gray-600 dark:text-gray-300 dark:bg-gray-800 dark:hover:bg-gray-700;
+  }
+  
+  .btn-danger {
+    @apply inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200;
+  }
+  
+  .btn-ghost {
+    @apply inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg text-gray-600 hover:text-gray-900 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 dark:text-gray-400 dark:hover:text-gray-100 dark:hover:bg-gray-800;
+  }
+  
+  /* Card components */
+  .card {
+    @apply bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm;
+  }
+  
+  .card-hover {
+    @apply card transition-all duration-200 hover:shadow-md hover:scale-[1.02];
+  }
+  
+  .card-glass {
+    @apply glassmorphism dark:glassmorphism-dark rounded-xl;
+  }
+  
+  /* Form components */
+  .form-input {
+    @apply block w-full rounded-lg border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 dark:bg-gray-800 dark:border-gray-600 dark:text-white dark:focus:border-primary-400 dark:focus:ring-primary-400;
+  }
+  
+  .form-label {
+    @apply block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2;
+  }
+  
+  .form-error {
+    @apply text-sm text-red-600 dark:text-red-400 mt-1;
+  }
+  
+  /* Health score specific styles */
+  .health-score-circle {
+    @apply relative inline-flex items-center justify-center;
+  }
+  
+  .health-score-excellent {
+    @apply text-health-excellent;
+  }
+  
+  .health-score-good {
+    @apply text-health-good;
+  }
+  
+  .health-score-fair {
+    @apply text-health-fair;
+  }
+  
+  .health-score-poor {
+    @apply text-health-poor;
+  }
+  
+  .health-score-critical {
+    @apply text-health-critical;
+  }
+  
+  /* Dashboard layout */
+  .dashboard-sidebar {
+    @apply fixed inset-y-0 left-0 z-50 w-72 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700;
+  }
+  
+  .dashboard-main {
+    @apply flex-1 pl-72;
+  }
+  
+  .dashboard-header {
+    @apply sticky top-0 z-40 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700;
+  }
+  
+  .dashboard-content {
+    @apply p-6 space-y-6;
+  }
+  
+  /* Loading states */
+  .skeleton {
+    @apply animate-pulse bg-gray-200 dark:bg-gray-700 rounded;
+  }
+  
+  .skeleton-text {
+    @apply skeleton h-4;
+  }
+  
+  .skeleton-card {
+    @apply skeleton h-32;
+  }
+  
+  /* Metric cards */
+  .metric-card {
+    @apply card p-6 space-y-4;
+  }
+  
+  .metric-card-header {
+    @apply flex items-center justify-between;
+  }
+  
+  .metric-value {
+    @apply text-3xl font-bold;
+  }
+  
+  .metric-label {
+    @apply text-sm font-medium text-gray-600 dark:text-gray-400;
+  }
+  
+  .metric-trend {
+    @apply flex items-center space-x-1 text-sm;
+  }
+  
+  .metric-trend-up {
+    @apply metric-trend text-green-600 dark:text-green-400;
+  }
+  
+  .metric-trend-down {
+    @apply metric-trend text-red-600 dark:text-red-400;
+  }
+  
+  .metric-trend-stable {
+    @apply metric-trend text-gray-600 dark:text-gray-400;
+  }
+  
+  /* Alert styles */
+  .alert {
+    @apply p-4 rounded-lg border;
+  }
+  
+  .alert-info {
+    @apply alert bg-blue-50 border-blue-200 text-blue-800 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-200;
+  }
+  
+  .alert-success {
+    @apply alert bg-green-50 border-green-200 text-green-800 dark:bg-green-900/20 dark:border-green-800 dark:text-green-200;
+  }
+  
+  .alert-warning {
+    @apply alert bg-yellow-50 border-yellow-200 text-yellow-800 dark:bg-yellow-900/20 dark:border-yellow-800 dark:text-yellow-200;
+  }
+  
+  .alert-error {
+    @apply alert bg-red-50 border-red-200 text-red-800 dark:bg-red-900/20 dark:border-red-800 dark:text-red-200;
+  }
+  
+  /* Chart container */
+  .chart-container {
+    @apply w-full h-64 relative;
+  }
+  
+  .chart-responsive {
+    @apply w-full h-full;
+  }
+  
+  /* Responsive grid */
+  .metric-grid {
+    @apply grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4;
+  }
+  
+  .chart-grid {
+    @apply grid grid-cols-1 gap-6 lg:grid-cols-2;
+  }
+  
+  /* Status indicators */
+  .status-dot {
+    @apply inline-block w-2 h-2 rounded-full;
+  }
+  
+  .status-active {
+    @apply status-dot bg-green-500;
+  }
+  
+  .status-inactive {
+    @apply status-dot bg-gray-400;
+  }
+  
+  .status-error {
+    @apply status-dot bg-red-500;
+  }
+  
+  .status-warning {
+    @apply status-dot bg-yellow-500;
+  }
+  
+  /* Transitions */
+  .transition-colors {
+    transition-property: color, background-color, border-color;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    transition-duration: 150ms;
+  }
+  
+  .transition-transform {
+    transition-property: transform;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    transition-duration: 150ms;
+  }
+  
+  .transition-all {
+    transition-property: all;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    transition-duration: 150ms;
+  }
+}
+
+@layer utilities {
+  /* Custom utilities */
+  .text-balance {
+    text-wrap: balance;
+  }
+  
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  
+  /* Focus visible improvements */
+  .focus-visible-ring {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2;
+  }
+  
+  /* Print styles */
+  @media print {
+    .print-hidden {
+      display: none !important;
+    }
+    
+    .print-break-before {
+      break-before: page;
+    }
+    
+    .print-break-after {
+      break-after: page;
+    }
+    
+    .print-break-inside-avoid {
+      break-inside: avoid;
+    }
+  }
+  
+  /* High contrast mode */
+  @media (prefers-contrast: high) {
+    .card {
+      @apply border-2;
+    }
+    
+    .btn-primary {
+      @apply border-2 border-primary-800;
+    }
+  }
+  
+  /* Reduced motion */
+  @media (prefers-reduced-motion: reduce) {
+    .animate-spin,
+    .animate-ping,
+    .animate-pulse,
+    .animate-bounce {
+      animation: none;
+    }
+    
+    .transition-all,
+    .transition-colors,
+    .transition-transform {
+      transition: none;
+    }
+  }
+  
+  /* Custom gradient text */
+  .gradient-text {
+    @apply bg-gradient-to-r from-primary-600 to-primary-400 bg-clip-text text-transparent;
+  }
+  
+  .gradient-text-health {
+    @apply bg-gradient-to-r from-health-excellent to-health-good bg-clip-text text-transparent;
+  }
+}
