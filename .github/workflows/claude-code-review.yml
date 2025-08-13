@@ -12,11 +12,10 @@ on:
 
 jobs:
   claude-review:
-    # Optional: Filter by PR author
-    # if: |
-    #   github.event.pull_request.user.login == 'external-contributor' ||
-    #   github.event.pull_request.user.login == 'new-developer' ||
-    #   github.event.pull_request.author_association == 'FIRST_TIME_CONTRIBUTOR'
+    # Skip review for workflow setup PRs to avoid authentication issues
+    if: |
+      !contains(github.event.pull_request.title, 'Add Claude Code GitHub Workflow') &&
+      !contains(github.event.pull_request.head.ref, 'add-claude-github-actions')
     
     runs-on: ubuntu-latest
     permissions:
