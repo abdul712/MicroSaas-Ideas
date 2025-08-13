@@ -1,0 +1,545 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Business/Organization Management
+model Business {
+  id                String   @id @default(cuid())
+  name              String
+  slug              String   @unique
+  description       String?
+  timezone          String   @default("UTC")
+  language          String   @default("en")
+  currency          String   @default("USD")
+  logo              String?
+  website           String?
+  phone             String?
+  email             String?
+  address           Json?    // {street, city, state, zip, country}
+  
+  // Business settings
+  settings          Json     @default("{}")  // booking rules, notifications, etc.
+  
+  // Widget customization
+  widgetSettings    Json     @default("{}")  // colors, fonts, layout
+  
+  // Subscription and billing
+  subscriptionId    String?
+  subscriptionStatus String? @default("trial")
+  billingEmail      String?
+  
+  // Feature flags
+  features          Json     @default("{}")
+  
+  // Audit fields
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  // Relationships
+  users             User[]
+  services          Service[]
+  staff             Staff[]
+  bookings          Booking[]
+  customers         Customer[]
+  locations         Location[]
+  integrations      Integration[]
+  notifications     Notification[]
+  paymentMethods    PaymentMethod[]
+  
+  @@map("businesses")
+}
+
+// User management (staff, admins)
+model User {
+  id                String   @id @default(cuid())
+  email             String   @unique
+  name              String
+  avatar            String?
+  role              UserRole @default(STAFF)
+  permissions       Json     @default("[]")
+  
+  // Authentication
+  emailVerified     DateTime?
+  lastLoginAt       DateTime?
+  isActive          Boolean  @default(true)
+  
+  // Profile
+  phone             String?
+  timezone          String?
+  language          String   @default("en")
+  preferences       Json     @default("{}")
+  
+  // Audit fields
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  // Relationships
+  business          Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  businessId        String
+  staff             Staff?
+  
+  @@map("users")
+}
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  STAFF
+}
+
+// Service definitions
+model Service {
+  id                String   @id @default(cuid())
+  name              String
+  description       String?
+  duration          Int      // in minutes
+  price             Decimal  @db.Decimal(10, 2)
+  currency          String   @default("USD")
+  
+  // Service settings
+  bufferTimeBefore  Int      @default(0) // in minutes
+  bufferTimeAfter   Int      @default(0)
+  maxBookingsPerDay Int?
+  isActive          Boolean  @default(true)
+  
+  // Advanced settings
+  requiresDeposit   Boolean  @default(false)
+  depositAmount     Decimal? @db.Decimal(10, 2)
+  depositPercentage Int?     // percentage of total price
+  
+  // Booking rules
+  advanceBookingMin Int?     // minimum hours before booking
+  advanceBookingMax Int?     // maximum days in advance
+  cancellationPolicy Json?   // cancellation rules
+  
+  // Categories and tags
+  category          String?
+  tags              String[] @default([])
+  
+  // Audit fields
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  // Relationships
+  business          Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  businessId        String
+  bookings          Booking[]
+  staffServices     StaffService[]
+  
+  @@map("services")
+}
+
+// Staff/provider management
+model Staff {
+  id                String   @id @default(cuid())
+  name              String
+  email             String
+  phone             String?
+  avatar            String?
+  title             String?
+  bio               String?
+  
+  // Availability settings
+  isActive          Boolean  @default(true)
+  timezone          String?
+  
+  // Calendar integration
+  googleCalendarId  String?
+  outlookCalendarId String?
+  calendarSyncEnabled Boolean @default(false)
+  
+  // Audit fields
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  // Relationships
+  business          Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  businessId        String
+  user              User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId            String?  @unique
+  
+  availability      Availability[]
+  bookings          Booking[]
+  staffServices     StaffService[]
+  
+  @@map("staff")
+}
+
+// Staff-Service relationships (many-to-many)
+model StaffService {
+  id          String  @id @default(cuid())
+  
+  staff       Staff   @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  staffId     String
+  service     Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  serviceId   String
+  
+  // Service-specific settings for this staff member
+  customPrice Decimal? @db.Decimal(10, 2)
+  isActive    Boolean  @default(true)
+  
+  createdAt   DateTime @default(now())
+  
+  @@unique([staffId, serviceId])
+  @@map("staff_services")
+}
+
+// Location management (for multi-location businesses)
+model Location {
+  id          String   @id @default(cuid())
+  name        String
+  address     Json     // {street, city, state, zip, country}
+  phone       String?
+  timezone    String   @default("UTC")
+  isActive    Boolean  @default(true)
+  
+  settings    Json     @default("{}")
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  businessId  String
+  
+  bookings    Booking[]
+  availability Availability[]
+  
+  @@map("locations")
+}
+
+// Staff availability rules
+model Availability {
+  id          String   @id @default(cuid())
+  dayOfWeek   Int      // 0 = Sunday, 1 = Monday, etc.
+  startTime   String   // HH:MM format
+  endTime     String   // HH:MM format
+  isActive    Boolean  @default(true)
+  
+  // Date range for temporary availability
+  validFrom   DateTime?
+  validTo     DateTime?
+  
+  // Break times within the availability slot
+  breaks      Json     @default("[]") // [{startTime, endTime}]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  staff       Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  staffId     String
+  location    Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  locationId  String?
+  
+  @@map("availability")
+}
+
+// Customer management
+model Customer {
+  id          String   @id @default(cuid())
+  email       String
+  name        String
+  phone       String?
+  avatar      String?
+  
+  // Customer preferences
+  timezone    String?
+  language    String   @default("en")
+  preferences Json     @default("{}")
+  
+  // Customer data
+  notes       String?
+  tags        String[] @default([])
+  
+  // Statistics
+  totalBookings Int    @default(0)
+  totalSpent    Decimal @default(0) @db.Decimal(10, 2)
+  lastBookingAt DateTime?
+  
+  // GDPR and privacy
+  marketingOptIn Boolean @default(false)
+  dataProcessingConsent Boolean @default(true)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  businessId  String
+  bookings    Booking[]
+  
+  @@unique([businessId, email])
+  @@map("customers")
+}
+
+// Booking management
+model Booking {
+  id          String        @id @default(cuid())
+  
+  // Booking details
+  startTime   DateTime
+  endTime     DateTime
+  status      BookingStatus @default(CONFIRMED)
+  
+  // Customer information
+  customerName String
+  customerEmail String
+  customerPhone String?
+  notes       String?
+  
+  // Internal notes and management
+  internalNotes String?
+  
+  // Pricing and payment
+  totalPrice  Decimal       @db.Decimal(10, 2)
+  paidAmount  Decimal       @default(0) @db.Decimal(10, 2)
+  currency    String        @default("USD")
+  
+  // Booking source and tracking
+  source      String?       // 'widget', 'admin', 'api', etc.
+  referrer    String?
+  utmParams   Json?
+  
+  // Cancellation and changes
+  cancelledAt DateTime?
+  cancelledBy String?       // 'customer', 'staff', 'admin'
+  cancellationReason String?
+  rescheduledFrom String?   // previous booking id
+  
+  // Audit fields
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  
+  // Relationships
+  business    Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  businessId  String
+  service     Service       @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  serviceId   String
+  staff       Staff         @relation(fields: [staffId], references: [id], onDelete: Restrict)
+  staffId     String
+  customer    Customer?     @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  customerId  String?
+  location    Location?     @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  locationId  String?
+  
+  payments    Payment[]
+  notifications Notification[]
+  
+  @@map("bookings")
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CHECKED_IN
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+// Payment management
+model Payment {
+  id                String        @id @default(cuid())
+  amount            Decimal       @db.Decimal(10, 2)
+  currency          String        @default("USD")
+  status            PaymentStatus @default(PENDING)
+  type              PaymentType   @default(DEPOSIT)
+  
+  // Payment processor details
+  processorId       String?       // Stripe payment intent ID, etc.
+  processor         String?       // 'stripe', 'paypal', etc.
+  processorMetadata Json?
+  
+  // Payment details
+  paymentMethodId   String?
+  refundedAt        DateTime?
+  refundAmount      Decimal?      @db.Decimal(10, 2)
+  refundReason      String?
+  
+  // Fees
+  processingFee     Decimal?      @db.Decimal(10, 2)
+  applicationFee    Decimal?      @db.Decimal(10, 2)
+  
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  
+  booking           Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  bookingId         String
+  paymentMethod     PaymentMethod? @relation(fields: [paymentMethodId], references: [id])
+  
+  @@map("payments")
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum PaymentType {
+  DEPOSIT
+  FULL_PAYMENT
+  ADDITIONAL_FEE
+  REFUND
+}
+
+// Payment methods for businesses
+model PaymentMethod {
+  id          String   @id @default(cuid())
+  type        String   // 'stripe', 'paypal', 'square'
+  name        String
+  isActive    Boolean  @default(true)
+  isDefault   Boolean  @default(false)
+  
+  // Processor-specific configuration
+  config      Json     // API keys, webhook endpoints, etc.
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  businessId  String
+  payments    Payment[]
+  
+  @@map("payment_methods")
+}
+
+// Calendar and third-party integrations
+model Integration {
+  id          String            @id @default(cuid())
+  type        IntegrationType
+  name        String
+  isActive    Boolean           @default(true)
+  
+  // Integration configuration
+  config      Json              // API credentials, settings, etc.
+  metadata    Json              @default("{}")
+  
+  // Sync status
+  lastSyncAt  DateTime?
+  syncStatus  String?           @default("active")
+  syncErrors  Json?
+  
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  
+  business    Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  businessId  String
+  
+  @@map("integrations")
+}
+
+enum IntegrationType {
+  GOOGLE_CALENDAR
+  OUTLOOK_CALENDAR
+  APPLE_CALENDAR
+  ZOOM
+  GOOGLE_MEET
+  MICROSOFT_TEAMS
+  STRIPE
+  PAYPAL
+  SQUARE
+  MAILCHIMP
+  SENDGRID
+  TWILIO
+  SLACK
+  ZAPIER
+}
+
+// Notification management
+model Notification {
+  id          String              @id @default(cuid())
+  type        NotificationType
+  channel     NotificationChannel
+  status      NotificationStatus  @default(PENDING)
+  
+  // Notification content
+  subject     String?
+  message     String
+  metadata    Json                @default("{}")
+  
+  // Recipient information
+  recipientEmail String?
+  recipientPhone String?
+  recipientName  String?
+  
+  // Scheduling
+  scheduledFor DateTime?
+  sentAt      DateTime?
+  deliveredAt DateTime?
+  
+  // Retry logic
+  retryCount  Int                 @default(0)
+  maxRetries  Int                 @default(3)
+  lastError   String?
+  
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  
+  business    Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  businessId  String
+  booking     Booking?            @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  bookingId   String?
+  
+  @@map("notifications")
+}
+
+enum NotificationType {
+  BOOKING_CONFIRMATION
+  BOOKING_REMINDER
+  BOOKING_CANCELLED
+  BOOKING_RESCHEDULED
+  PAYMENT_CONFIRMATION
+  PAYMENT_FAILED
+  STAFF_NOTIFICATION
+  ADMIN_ALERT
+  MARKETING
+  SYSTEM
+}
+
+enum NotificationChannel {
+  EMAIL
+  SMS
+  PUSH
+  WEBHOOK
+  SLACK
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  DELIVERED
+  FAILED
+  CANCELLED
+}
+
+// Analytics and reporting (simplified)
+model AnalyticsEvent {
+  id          String   @id @default(cuid())
+  event       String   // 'booking_created', 'widget_loaded', etc.
+  properties  Json     @default("{}")
+  
+  // Context
+  sessionId   String?
+  userId      String?
+  businessId  String
+  
+  // Tracking
+  userAgent   String?
+  ipAddress   String?
+  referrer    String?
+  
+  createdAt   DateTime @default(now())
+  
+  @@map("analytics_events")
+}
