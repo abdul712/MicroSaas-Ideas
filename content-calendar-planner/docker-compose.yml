@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: content-calendar-db
+    environment:
+      POSTGRES_DB: content_calendar_planner
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: content-calendar-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Main Application
+  app:
+    build: .
+    container_name: content-calendar-app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/content_calendar_planner
+      - REDIS_URL=redis://redis:6379
+      - NEXTAUTH_URL=http://localhost:3000
+      - NEXTAUTH_SECRET=your-secret-key-here
+    volumes:
+      - ./uploads:/app/uploads
+    restart: unless-stopped
+
+  # Database Migrations (one-time setup)
+  migrate:
+    build: .
+    container_name: content-calendar-migrate
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/content_calendar_planner
+    command: ["npx", "prisma", "migrate", "deploy"]
+    restart: "no"
+
+volumes:
+  postgres_data:
+  redis_data:
