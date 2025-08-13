@@ -1,0 +1,148 @@
+version: '3.8'
+
+services:
+  # Database Services
+  postgres:
+    image: timescale/timescaledb:latest-pg15
+    container_name: clv-postgres
+    environment:
+      POSTGRES_DB: clv_tracker
+      POSTGRES_USER: clv_user
+      POSTGRES_PASSWORD: clv_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/prisma/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - clv-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clv_user -d clv_tracker"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  redis:
+    image: redis:7-alpine
+    container_name: clv-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - clv-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: development
+    container_name: clv-backend
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://clv_user:clv_password@postgres:5432/clv_tracker
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: dev-jwt-secret-change-in-production
+      PORT: 3001
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - clv-network
+    command: npm run dev
+
+  # Frontend Dashboard
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: development
+    container_name: clv-frontend
+    environment:
+      NODE_ENV: development
+      NEXT_PUBLIC_API_URL: http://localhost:3001
+      PORT: 3000
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - backend
+    networks:
+      - clv-network
+    command: npm run dev
+
+  # Background Job Worker
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: development
+    container_name: clv-worker
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://clv_user:clv_password@postgres:5432/clv_tracker
+      REDIS_URL: redis://redis:6379
+      WORKER_MODE: true
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - clv-network
+    command: npm run worker
+
+  # Development Tools
+  adminer:
+    image: adminer:latest
+    container_name: clv-adminer
+    ports:
+      - "8080:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    depends_on:
+      - postgres
+    networks:
+      - clv-network
+    profiles: ["tools"]
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: clv-redis-commander
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
+    networks:
+      - clv-network
+    profiles: ["tools"]
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  clv-network:
+    driver: bridge
