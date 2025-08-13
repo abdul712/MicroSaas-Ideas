@@ -1,0 +1,300 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Organization {
+  id          String   @id @default(cuid())
+  name        String
+  domain      String   @unique
+  planType    PlanType @default(FREE)
+  settings    Json     @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  users         User[]
+  visitors      Visitor[]
+  conversations Conversation[]
+  widgets       Widget[]
+  analytics     Analytics[]
+  departments   Department[]
+  cannedResponses CannedResponse[]
+
+  @@map("organizations")
+}
+
+model User {
+  id             String   @id @default(cuid())
+  organizationId String
+  email          String   @unique
+  name           String?
+  role           UserRole @default(AGENT)
+  status         UserStatus @default(OFFLINE)
+  lastActiveAt   DateTime?
+  settings       Json     @default("{}")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  organization      Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  conversations     Conversation[]
+  messages          Message[]
+  analytics         Analytics[]
+  departmentMembers DepartmentMember[]
+
+  @@map("users")
+}
+
+model Department {
+  id             String @id @default(cuid())
+  organizationId String
+  name           String
+  description    String?
+  settings       Json   @default("{}")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  members      DepartmentMember[]
+  conversations Conversation[]
+
+  @@map("departments")
+}
+
+model DepartmentMember {
+  id           String @id @default(cuid())
+  departmentId String
+  userId       String
+  role         DepartmentRole @default(MEMBER)
+  createdAt    DateTime @default(now())
+
+  // Relations
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([departmentId, userId])
+  @@map("department_members")
+}
+
+model Widget {
+  id             String @id @default(cuid())
+  organizationId String
+  name           String
+  settings       Json   @default("{}")
+  isActive       Boolean @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  visitors     Visitor[]
+
+  @@map("widgets")
+}
+
+model Visitor {
+  id             String   @id @default(cuid())
+  organizationId String
+  widgetId       String?
+  identifier     String?  // Custom identifier or session ID
+  email          String?
+  name           String?
+  phone          String?
+  ipAddress      String?
+  userAgent      String?
+  location       Json?    // Country, city, etc.
+  metadata       Json     @default("{}")
+  firstVisitAt   DateTime @default(now())
+  lastVisitAt    DateTime @default(now())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  widget        Widget?        @relation(fields: [widgetId], references: [id], onDelete: SetNull)
+  conversations Conversation[]
+
+  @@map("visitors")
+}
+
+model Conversation {
+  id             String     @id @default(cuid())
+  organizationId String
+  visitorId      String
+  assignedUserId String?
+  departmentId   String?
+  status         ConversationStatus @default(WAITING)
+  priority       Priority   @default(NORMAL)
+  rating         Int?       // 1-5 satisfaction rating
+  tags           String[]   @default([])
+  summary        String?
+  startedAt      DateTime   @default(now())
+  endedAt        DateTime?
+  updatedAt      DateTime   @updatedAt
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  visitor      Visitor      @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  assignedUser User?        @relation(fields: [assignedUserId], references: [id], onDelete: SetNull)
+  department   Department?  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  messages     Message[]
+  analytics    Analytics[]
+
+  @@map("conversations")
+}
+
+model Message {
+  id             String      @id @default(cuid())
+  conversationId String
+  senderId       String?     // User ID for agent messages, null for visitor
+  senderType     SenderType
+  content        String
+  messageType    MessageType @default(TEXT)
+  attachments    Json        @default("[]")
+  metadata       Json        @default("{}")
+  isInternal     Boolean     @default(false) // Internal notes between agents
+  readAt         DateTime?
+  createdAt      DateTime    @default(now())
+
+  // Relations
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User?        @relation(fields: [senderId], references: [id], onDelete: SetNull)
+
+  @@map("messages")
+}
+
+model CannedResponse {
+  id             String @id @default(cuid())
+  organizationId String
+  title          String
+  content        String
+  category       String?
+  shortcut       String?
+  usageCount     Int    @default(0)
+  isActive       Boolean @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("canned_responses")
+}
+
+model Analytics {
+  id             String   @id @default(cuid())
+  organizationId String
+  conversationId String?
+  userId         String?
+  metricType     String   // response_time, satisfaction, volume, etc.
+  value          Float
+  dimensions     Json     @default("{}")
+  timestamp      DateTime @default(now())
+
+  // Relations
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("analytics")
+}
+
+// AI Chatbot Models
+model ChatbotFlow {
+  id             String @id @default(cuid())
+  organizationId String
+  name           String
+  description    String?
+  isActive       Boolean @default(true)
+  settings       Json    @default("{}")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  intents      Intent[]
+
+  @@map("chatbot_flows")
+}
+
+model Intent {
+  id           String @id @default(cuid())
+  chatbotFlowId String
+  name         String
+  patterns     String[] // Training phrases
+  responses    Json     @default("[]")
+  actions      Json     @default("{}")
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  chatbotFlow ChatbotFlow @relation(fields: [chatbotFlowId], references: [id], onDelete: Cascade)
+
+  @@map("intents")
+}
+
+// Enums
+enum PlanType {
+  FREE
+  STARTER
+  PROFESSIONAL
+  BUSINESS
+  ENTERPRISE
+}
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  AGENT
+}
+
+enum UserStatus {
+  ONLINE
+  AWAY
+  BUSY
+  OFFLINE
+}
+
+enum DepartmentRole {
+  MANAGER
+  MEMBER
+}
+
+enum ConversationStatus {
+  WAITING
+  ACTIVE
+  RESOLVED
+  CLOSED
+}
+
+enum Priority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum SenderType {
+  VISITOR
+  AGENT
+  SYSTEM
+  BOT
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  FILE
+  SYSTEM
+  BOT_RESPONSE
+}
