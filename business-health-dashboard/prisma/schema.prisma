@@ -1,0 +1,366 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                String              @id @default(cuid())
+  email            String              @unique
+  name             String?
+  avatar           String?
+  role             Role                @default(USER)
+  organizationId   String?
+  organization     Organization?       @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  subscriptions    Subscription[]
+  notifications    Notification[]
+  apiKeys          ApiKey[]
+  auditLogs        AuditLog[]
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  @@map("users")
+}
+
+model Organization {
+  id              String         @id @default(cuid())
+  name            String
+  industry        String?
+  size            CompanySize?
+  timezone        String         @default("UTC")
+  logo            String?
+  website         String?
+  users           User[]
+  integrations    Integration[]
+  metrics         Metric[]
+  healthScores    HealthScore[]
+  alerts          Alert[]
+  dashboards      Dashboard[]
+  subscriptions   Subscription[]
+  settings        Json           @default("{}")
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@map("organizations")
+}
+
+model Integration {
+  id               String             @id @default(cuid())
+  organizationId   String
+  organization     Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  type             IntegrationType
+  name             String
+  status           IntegrationStatus  @default(ACTIVE)
+  credentials      Json // Encrypted credentials
+  config           Json               @default("{}")
+  lastSync         DateTime?
+  syncFrequency    Int                @default(3600) // seconds
+  errorCount       Int                @default(0)
+  lastError        String?
+  metrics          Metric[]
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  @@unique([organizationId, type])
+  @@map("integrations")
+}
+
+model Metric {
+  id               String      @id @default(cuid())
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  integrationId    String
+  integration      Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  category         MetricCategory
+  name             String
+  value            Decimal
+  unit             String?
+  previousValue    Decimal?
+  changePercent    Decimal?
+  timestamp        DateTime
+  metadata         Json        @default("{}")
+  alerts           Alert[]
+  createdAt        DateTime    @default(now())
+
+  @@index([organizationId, category, timestamp])
+  @@index([timestamp])
+  @@map("metrics")
+}
+
+model HealthScore {
+  id               String       @id @default(cuid())
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  overallScore     Int
+  financialScore   Int
+  customerScore    Int
+  operationsScore  Int
+  growthScore      Int
+  marketingScore   Int
+  breakdown        Json         @default("{}")
+  calculatedAt     DateTime
+  alerts           Alert[]
+  createdAt        DateTime     @default(now())
+
+  @@index([organizationId, calculatedAt])
+  @@map("health_scores")
+}
+
+model Alert {
+  id               String       @id @default(cuid())
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  metricId         String?
+  metric           Metric?      @relation(fields: [metricId], references: [id], onDelete: SetNull)
+  healthScoreId    String?
+  healthScore      HealthScore? @relation(fields: [healthScoreId], references: [id], onDelete: SetNull)
+  type             AlertType
+  severity         Severity
+  title            String
+  description      String
+  status           AlertStatus  @default(ACTIVE)
+  threshold        Json?
+  actionTaken      String?
+  resolvedAt       DateTime?
+  resolvedBy       String?
+  notifications    Notification[]
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  @@index([organizationId, status, createdAt])
+  @@index([severity, status])
+  @@map("alerts")
+}
+
+model Dashboard {
+  id               String       @id @default(cuid())
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name             String
+  description      String?
+  config           Json         @default("{}")
+  isDefault        Boolean      @default(false)
+  widgets          Json         @default("[]")
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  @@map("dashboards")
+}
+
+model Benchmark {
+  id            String     @id @default(cuid())
+  industry      String
+  companySize   CompanySize
+  metricName    String
+  percentile25  Decimal
+  percentile50  Decimal
+  percentile75  Decimal
+  percentile90  Decimal
+  sampleSize    Int
+  updatedAt     DateTime   @updatedAt
+  createdAt     DateTime   @default(now())
+
+  @@unique([industry, companySize, metricName])
+  @@map("benchmarks")
+}
+
+model Subscription {
+  id                  String               @id @default(cuid())
+  organizationId      String
+  organization        Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId              String
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stripeSubscriptionId String?            @unique
+  stripeCustomerId    String?             @unique
+  plan                SubscriptionPlan
+  status              SubscriptionStatus
+  currentPeriodStart  DateTime
+  currentPeriodEnd    DateTime
+  cancelAtPeriodEnd   Boolean             @default(false)
+  trialEndsAt         DateTime?
+  metadata            Json                @default("{}")
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  @@map("subscriptions")
+}
+
+model Notification {
+  id          String              @id @default(cuid())
+  userId      String
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  alertId     String?
+  alert       Alert?              @relation(fields: [alertId], references: [id], onDelete: SetNull)
+  type        NotificationType
+  channel     NotificationChannel
+  title       String
+  message     String
+  status      NotificationStatus  @default(PENDING)
+  sentAt      DateTime?
+  readAt      DateTime?
+  metadata    Json                @default("{}")
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@index([userId, status])
+  @@map("notifications")
+}
+
+model ApiKey {
+  id          String      @id @default(cuid())
+  userId      String
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  keyHash     String      @unique
+  permissions Json        @default("[]")
+  lastUsed    DateTime?
+  expiresAt   DateTime?
+  isActive    Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+
+  @@map("api_keys")
+}
+
+model AuditLog {
+  id              String    @id @default(cuid())
+  userId          String?
+  user            User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action          String
+  resource        String
+  resourceId      String?
+  oldValues       Json?
+  newValues       Json?
+  ipAddress       String?
+  userAgent       String?
+  metadata        Json      @default("{}")
+  createdAt       DateTime  @default(now())
+
+  @@index([userId, createdAt])
+  @@index([resource, resourceId])
+  @@map("audit_logs")
+}
+
+// Enums
+enum Role {
+  USER
+  ADMIN
+  OWNER
+}
+
+enum CompanySize {
+  SOLO
+  SMALL      // 2-10
+  MEDIUM     // 11-50
+  LARGE      // 51-200
+  ENTERPRISE // 200+
+}
+
+enum IntegrationType {
+  QUICKBOOKS
+  XERO
+  FRESHBOOKS
+  STRIPE
+  PAYPAL
+  SQUARE
+  HUBSPOT
+  SALESFORCE
+  PIPEDRIVE
+  ZOHO_CRM
+  GOOGLE_ANALYTICS
+  FACEBOOK_ADS
+  GOOGLE_ADS
+  MAILCHIMP
+  SHOPIFY
+  WOOCOMMERCE
+  CALENDLY
+  SLACK
+  GUSTO
+  BAMBOO_HR
+  TOGGL
+  ASANA
+}
+
+enum IntegrationStatus {
+  ACTIVE
+  INACTIVE
+  ERROR
+  PENDING
+  EXPIRED
+}
+
+enum MetricCategory {
+  FINANCIAL
+  SALES
+  MARKETING
+  OPERATIONS
+  CUSTOMER
+  HR
+  INVENTORY
+  GROWTH
+}
+
+enum AlertType {
+  THRESHOLD
+  ANOMALY
+  TREND
+  BENCHMARK
+  SYSTEM
+  INTEGRATION
+}
+
+enum Severity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+enum AlertStatus {
+  ACTIVE
+  ACKNOWLEDGED
+  RESOLVED
+  SNOOZED
+}
+
+enum SubscriptionPlan {
+  STARTER
+  PROFESSIONAL
+  BUSINESS
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  UNPAID
+}
+
+enum NotificationType {
+  ALERT
+  SYSTEM
+  MARKETING
+  INTEGRATION
+}
+
+enum NotificationChannel {
+  EMAIL
+  SMS
+  PUSH
+  SLACK
+  WEBHOOK
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  DELIVERED
+  FAILED
+  READ
+}
