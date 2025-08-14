@@ -1,0 +1,242 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222.2 84% 4.9%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96%;
+    --accent-foreground: 222.2 84% 4.9%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 221.2 83.2% 53.3%;
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 84% 4.9%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 224.3 76.3% 94.1%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+@layer components {
+  /* Custom booking widget styles */
+  .booking-widget {
+    @apply bg-white rounded-lg shadow-lg border border-gray-200;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+
+  .booking-widget.dark {
+    @apply bg-gray-900 border-gray-700 text-white;
+  }
+
+  .booking-time-slot {
+    @apply px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-center cursor-pointer transition-all duration-200;
+  }
+
+  .booking-time-slot:hover {
+    @apply border-primary bg-primary/5;
+  }
+
+  .booking-time-slot.selected {
+    @apply bg-primary text-primary-foreground border-primary;
+  }
+
+  .booking-time-slot.disabled {
+    @apply bg-gray-100 text-gray-400 cursor-not-allowed border-gray-200;
+  }
+
+  .booking-time-slot.booked {
+    @apply bg-red-50 text-red-600 border-red-200 cursor-not-allowed;
+  }
+
+  /* Calendar styles */
+  .booking-calendar {
+    @apply w-full max-w-md mx-auto;
+  }
+
+  .booking-calendar-day {
+    @apply w-10 h-10 flex items-center justify-center text-sm rounded-md cursor-pointer transition-colors;
+  }
+
+  .booking-calendar-day:hover {
+    @apply bg-gray-100;
+  }
+
+  .booking-calendar-day.selected {
+    @apply bg-primary text-primary-foreground;
+  }
+
+  .booking-calendar-day.disabled {
+    @apply text-gray-300 cursor-not-allowed;
+  }
+
+  .booking-calendar-day.unavailable {
+    @apply text-red-300 cursor-not-allowed;
+  }
+
+  /* Form styles */
+  .booking-form-field {
+    @apply space-y-2;
+  }
+
+  .booking-form-label {
+    @apply block text-sm font-medium text-gray-700;
+  }
+
+  .booking-form-input {
+    @apply w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary;
+  }
+
+  .booking-form-textarea {
+    @apply w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary min-h-[80px] resize-none;
+  }
+
+  .booking-form-error {
+    @apply text-sm text-red-600;
+  }
+
+  /* Button styles */
+  .booking-btn {
+    @apply px-4 py-2 rounded-md font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2;
+  }
+
+  .booking-btn-primary {
+    @apply bg-primary text-primary-foreground hover:bg-primary/90 focus:ring-primary;
+  }
+
+  .booking-btn-secondary {
+    @apply bg-gray-200 text-gray-900 hover:bg-gray-300 focus:ring-gray-500;
+  }
+
+  .booking-btn-outline {
+    @apply border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 focus:ring-gray-500;
+  }
+
+  .booking-btn-disabled {
+    @apply opacity-50 cursor-not-allowed;
+  }
+
+  /* Loading states */
+  .booking-spinner {
+    @apply inline-block w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin;
+  }
+
+  /* Responsive utilities */
+  .booking-widget-mobile {
+    @apply max-w-full mx-auto px-4;
+  }
+
+  .booking-widget-desktop {
+    @apply max-w-lg mx-auto;
+  }
+
+  /* Animation utilities */
+  .booking-fade-in {
+    @apply animate-fade-in;
+  }
+
+  .booking-slide-up {
+    @apply animate-slide-up;
+  }
+
+  /* Accessibility improvements */
+  .booking-focus-visible {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2;
+  }
+
+  /* Custom scrollbar for widget */
+  .booking-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: #cbd5e1 #f8fafc;
+  }
+
+  .booking-scrollbar::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .booking-scrollbar::-webkit-scrollbar-track {
+    background: #f8fafc;
+    border-radius: 3px;
+  }
+
+  .booking-scrollbar::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 3px;
+  }
+
+  .booking-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+  }
+}
+
+/* Print styles */
+@media print {
+  .booking-widget {
+    @apply shadow-none border-gray-300;
+  }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .booking-widget {
+    @apply border-2 border-black;
+  }
+  
+  .booking-time-slot {
+    @apply border-2;
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .booking-time-slot,
+  .booking-calendar-day,
+  .booking-btn {
+    @apply transition-none;
+  }
+  
+  .booking-fade-in,
+  .booking-slide-up {
+    @apply animate-none;
+  }
+}
