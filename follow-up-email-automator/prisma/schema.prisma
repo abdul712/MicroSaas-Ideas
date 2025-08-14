@@ -1,0 +1,604 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  company       String?
+  role          UserRole  @default(USER)
+  planType      PlanType  @default(STARTER)
+  stripeCustomerId String? @unique
+  subscriptionStatus String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts          Account[]
+  sessions          Session[]
+  organizations     OrganizationMember[]
+  contacts          Contact[]
+  emailTemplates    EmailTemplate[]
+  emailSequences    EmailSequence[]
+  campaigns         Campaign[]
+  integrations      Integration[]
+  auditLogs         AuditLog[]
+  apiKeys           ApiKey[]
+
+  @@map("users")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  domain    String?
+  settings  Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members       OrganizationMember[]
+  contacts      Contact[]
+  emailTemplates EmailTemplate[]
+  emailSequences EmailSequence[]
+  campaigns     Campaign[]
+  integrations  Integration[]
+  auditLogs     AuditLog[]
+
+  @@map("organizations")
+}
+
+model OrganizationMember {
+  id     String           @id @default(cuid())
+  userId String
+  orgId  String
+  role   OrganizationRole @default(MEMBER)
+  joinedAt DateTime       @default(now())
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, orgId])
+  @@map("organization_members")
+}
+
+model Contact {
+  id           String            @id @default(cuid())
+  email        String
+  firstName    String?
+  lastName     String?
+  company      String?
+  phone        String?
+  jobTitle     String?
+  tags         String[]
+  customFields Json?
+  status       ContactStatus     @default(ACTIVE)
+  source       String?
+  unsubscribedAt DateTime?
+  userId       String
+  orgId        String?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization? @relation(fields: [orgId], references: [id])
+  emailSends   EmailSend[]
+  interactions ContactInteraction[]
+  segments     ContactSegment[]
+
+  @@unique([email, userId])
+  @@map("contacts")
+}
+
+model ContactSegment {
+  id        String   @id @default(cuid())
+  contactId String
+  segmentId String
+  addedAt   DateTime @default(now())
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  segment Segment @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+
+  @@unique([contactId, segmentId])
+  @@map("contact_segments")
+}
+
+model Segment {
+  id          String      @id @default(cuid())
+  name        String
+  description String?
+  conditions  Json
+  userId      String
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  contacts ContactSegment[]
+
+  @@map("segments")
+}
+
+model EmailTemplate {
+  id          String       @id @default(cuid())
+  name        String
+  subject     String
+  htmlContent String       @db.Text
+  textContent String?      @db.Text
+  variables   String[]
+  category    String?
+  isPublic    Boolean      @default(false)
+  userId      String
+  orgId       String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization     Organization?     @relation(fields: [orgId], references: [id])
+  sequenceSteps    SequenceStep[]
+  emailSends       EmailSend[]
+  campaigns        Campaign[]
+  abTestVariants   ABTestVariant[]
+
+  @@map("email_templates")
+}
+
+model EmailSequence {
+  id          String          @id @default(cuid())
+  name        String
+  description String?
+  triggerType SequenceTrigger @default(MANUAL)
+  triggerConditions Json?
+  status      SequenceStatus  @default(DRAFT)
+  userId      String
+  orgId       String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization?     @relation(fields: [orgId], references: [id])
+  steps        SequenceStep[]
+  enrollments  SequenceEnrollment[]
+  analytics    SequenceAnalytics[]
+
+  @@map("email_sequences")
+}
+
+model SequenceStep {
+  id           String      @id @default(cuid())
+  sequenceId   String
+  stepOrder    Int
+  delayDays    Int         @default(0)
+  delayHours   Int         @default(0)
+  templateId   String
+  conditions   Json?
+  stepType     StepType    @default(EMAIL)
+  isActive     Boolean     @default(true)
+  createdAt    DateTime    @default(now())
+
+  sequence EmailSequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+  template EmailTemplate @relation(fields: [templateId], references: [id])
+  emailSends EmailSend[]
+
+  @@unique([sequenceId, stepOrder])
+  @@map("sequence_steps")
+}
+
+model SequenceEnrollment {
+  id            String             @id @default(cuid())
+  sequenceId    String
+  contactId     String
+  currentStep   Int                @default(0)
+  status        EnrollmentStatus   @default(ACTIVE)
+  enrolledAt    DateTime           @default(now())
+  completedAt   DateTime?
+  pausedAt      DateTime?
+
+  sequence    EmailSequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+  emailSends  EmailSend[]
+
+  @@unique([sequenceId, contactId])
+  @@map("sequence_enrollments")
+}
+
+model Campaign {
+  id          String         @id @default(cuid())
+  name        String
+  description String?
+  type        CampaignType   @default(BROADCAST)
+  templateId  String
+  status      CampaignStatus @default(DRAFT)
+  scheduledAt DateTime?
+  sentAt      DateTime?
+  userId      String
+  orgId       String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization? @relation(fields: [orgId], references: [id])
+  template     EmailTemplate @relation(fields: [templateId], references: [id])
+  emailSends   EmailSend[]
+  abTests      ABTest[]
+
+  @@map("campaigns")
+}
+
+model EmailSend {
+  id            String     @id @default(cuid())
+  contactId     String
+  templateId    String
+  campaignId    String?
+  sequenceId    String?
+  stepId        String?
+  enrollmentId  String?
+  subject       String
+  status        SendStatus @default(QUEUED)
+  sentAt        DateTime?
+  deliveredAt   DateTime?
+  openedAt      DateTime?
+  clickedAt     DateTime?
+  repliedAt     DateTime?
+  bouncedAt     DateTime?
+  unsubscribedAt DateTime?
+  errorMessage  String?
+  metadata      Json?
+  createdAt     DateTime   @default(now())
+
+  contact      Contact             @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  template     EmailTemplate       @relation(fields: [templateId], references: [id])
+  campaign     Campaign?           @relation(fields: [campaignId], references: [id])
+  step         SequenceStep?       @relation(fields: [stepId], references: [id])
+  enrollment   SequenceEnrollment? @relation(fields: [enrollmentId], references: [id])
+  interactions ContactInteraction[]
+  events       EmailEvent[]
+
+  @@map("email_sends")
+}
+
+model EmailEvent {
+  id        String    @id @default(cuid())
+  sendId    String
+  type      EventType
+  data      Json?
+  timestamp DateTime  @default(now())
+
+  emailSend EmailSend @relation(fields: [sendId], references: [id], onDelete: Cascade)
+
+  @@map("email_events")
+}
+
+model ContactInteraction {
+  id           String           @id @default(cuid())
+  contactId    String
+  sendId       String?
+  type         InteractionType
+  value        String?
+  metadata     Json?
+  timestamp    DateTime         @default(now())
+
+  contact   Contact    @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  emailSend EmailSend? @relation(fields: [sendId], references: [id])
+
+  @@map("contact_interactions")
+}
+
+model ABTest {
+  id          String       @id @default(cuid())
+  campaignId  String
+  name        String
+  description String?
+  startDate   DateTime
+  endDate     DateTime?
+  status      ABTestStatus @default(RUNNING)
+  winnerId    String?
+  createdAt   DateTime     @default(now())
+
+  campaign Campaign        @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  variants ABTestVariant[]
+
+  @@map("ab_tests")
+}
+
+model ABTestVariant {
+  id          String @id @default(cuid())
+  testId      String
+  templateId  String
+  name        String
+  trafficPercentage Int
+  conversionRate    Float?
+  opens             Int    @default(0)
+  clicks            Int    @default(0)
+  conversions       Int    @default(0)
+
+  test     ABTest        @relation(fields: [testId], references: [id], onDelete: Cascade)
+  template EmailTemplate @relation(fields: [templateId], references: [id])
+
+  @@map("ab_test_variants")
+}
+
+model Integration {
+  id          String           @id @default(cuid())
+  type        IntegrationType
+  name        String
+  config      Json
+  status      IntegrationStatus @default(ACTIVE)
+  userId      String
+  orgId       String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization? @relation(fields: [orgId], references: [id])
+  webhooks     Webhook[]
+
+  @@map("integrations")
+}
+
+model Webhook {
+  id            String       @id @default(cuid())
+  integrationId String
+  url           String
+  events        String[]
+  isActive      Boolean      @default(true)
+  secret        String?
+  lastTriggered DateTime?
+  createdAt     DateTime     @default(now())
+
+  integration Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  deliveries  WebhookDelivery[]
+
+  @@map("webhooks")
+}
+
+model WebhookDelivery {
+  id           String             @id @default(cuid())
+  webhookId    String
+  eventType    String
+  payload      Json
+  status       WebhookDeliveryStatus @default(PENDING)
+  responseCode Int?
+  responseBody String?
+  attempts     Int                @default(0)
+  nextRetry    DateTime?
+  createdAt    DateTime           @default(now())
+
+  webhook Webhook @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  @@map("webhook_deliveries")
+}
+
+model SequenceAnalytics {
+  id          String   @id @default(cuid())
+  sequenceId  String
+  date        DateTime
+  enrolled    Int      @default(0)
+  completed   Int      @default(0)
+  paused      Int      @default(0)
+  unsubscribed Int     @default(0)
+  opens       Int      @default(0)
+  clicks      Int      @default(0)
+  replies     Int      @default(0)
+  bounces     Int      @default(0)
+  revenue     Float?
+
+  sequence EmailSequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+
+  @@unique([sequenceId, date])
+  @@map("sequence_analytics")
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  userId      String
+  orgId       String?
+  action      String
+  resource    String
+  resourceId  String?
+  details     Json?
+  ipAddress   String?
+  userAgent   String?
+  timestamp   DateTime @default(now())
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization? @relation(fields: [orgId], references: [id])
+
+  @@map("audit_logs")
+}
+
+model ApiKey {
+  id          String       @id @default(cuid())
+  name        String
+  keyHash     String       @unique
+  permissions String[]
+  isActive    Boolean      @default(true)
+  lastUsed    DateTime?
+  expiresAt   DateTime?
+  userId      String
+  createdAt   DateTime     @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("api_keys")
+}
+
+// Enums
+enum UserRole {
+  USER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum PlanType {
+  STARTER
+  PROFESSIONAL
+  BUSINESS
+  ENTERPRISE
+}
+
+enum OrganizationRole {
+  MEMBER
+  ADMIN
+  OWNER
+}
+
+enum ContactStatus {
+  ACTIVE
+  UNSUBSCRIBED
+  BOUNCED
+  BLOCKED
+}
+
+enum SequenceTrigger {
+  MANUAL
+  TAG_ADDED
+  FORM_SUBMITTED
+  PURCHASE_MADE
+  EVENT_TRIGGERED
+  TIME_DELAY
+}
+
+enum SequenceStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  COMPLETED
+  ARCHIVED
+}
+
+enum StepType {
+  EMAIL
+  SMS
+  WEBHOOK
+  DELAY
+  CONDITION
+}
+
+enum EnrollmentStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+  STOPPED
+}
+
+enum CampaignType {
+  BROADCAST
+  DRIP
+  AUTORESPONDER
+  NEWSLETTER
+}
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  SENT
+  PAUSED
+  CANCELLED
+}
+
+enum SendStatus {
+  QUEUED
+  SENDING
+  SENT
+  DELIVERED
+  OPENED
+  CLICKED
+  REPLIED
+  BOUNCED
+  FAILED
+  UNSUBSCRIBED
+}
+
+enum EventType {
+  SENT
+  DELIVERED
+  OPENED
+  CLICKED
+  REPLIED
+  BOUNCED
+  UNSUBSCRIBED
+  COMPLAINED
+}
+
+enum InteractionType {
+  OPEN
+  CLICK
+  REPLY
+  UNSUBSCRIBE
+  COMPLAINT
+  FORWARD
+}
+
+enum ABTestStatus {
+  DRAFT
+  RUNNING
+  COMPLETED
+  CANCELLED
+}
+
+enum IntegrationType {
+  CRM
+  ECOMMERCE
+  WEBHOOK
+  ZAPIER
+  CALENDAR
+  ANALYTICS
+}
+
+enum IntegrationStatus {
+  ACTIVE
+  INACTIVE
+  ERROR
+  PENDING
+}
+
+enum WebhookDeliveryStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  RETRYING
+}
