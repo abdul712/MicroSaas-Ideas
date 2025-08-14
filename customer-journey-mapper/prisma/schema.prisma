@@ -1,0 +1,262 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  role          Role      @default(USER)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts            Account[]
+  sessions            Session[]
+  organizationMembers OrganizationMember[]
+
+  @@map("users")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+model Organization {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  industry    String?
+  timezone    String   @default("UTC")
+  settings    Json     @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  members   OrganizationMember[]
+  projects  Project[]
+  journeys  Journey[]
+  customers Customer[]
+  apiKeys   ApiKey[]
+
+  @@map("organizations")
+}
+
+model OrganizationMember {
+  id     String           @id @default(cuid())
+  role   OrganizationRole @default(MEMBER)
+  userId String
+  orgId  String
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, orgId])
+  @@map("organization_members")
+}
+
+enum OrganizationRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  settings    Json     @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  orgId       String
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  journeys     Journey[]
+
+  @@map("projects")
+}
+
+model Journey {
+  id          String      @id @default(cuid())
+  name        String
+  description String?
+  stages      Json        @default("[]") // Array of stage definitions
+  touchpoints Json        @default("[]") // Array of touchpoint definitions
+  goals       Json        @default("[]") // Array of conversion goals
+  status      JourneyStatus @default(DRAFT)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  orgId       String
+  projectId   String?
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  project      Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  events       Event[]
+  journeyPaths JourneyPath[]
+  insights     Insight[]
+
+  @@map("journeys")
+}
+
+enum JourneyStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+model Customer {
+  id         String   @id @default(cuid())
+  externalId String? // Customer ID from external system
+  attributes Json     @default("{}")
+  firstSeen  DateTime @default(now())
+  lastSeen   DateTime @default(now())
+  orgId      String
+
+  organization Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  events       Event[]
+  journeyPaths JourneyPath[]
+
+  @@unique([orgId, externalId])
+  @@map("customers")
+}
+
+model Event {
+  id         String   @id @default(cuid())
+  eventType  String
+  properties Json     @default("{}")
+  timestamp  DateTime @default(now())
+  sessionId  String?
+  customerId String
+  journeyId  String?
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  journey  Journey? @relation(fields: [journeyId], references: [id], onDelete: SetNull)
+
+  @@index([customerId, timestamp])
+  @@index([journeyId, timestamp])
+  @@index([eventType, timestamp])
+  @@map("events")
+}
+
+model JourneyPath {
+  id               String            @id @default(cuid())
+  pathData         Json              @default("[]") // Array of touchpoints visited
+  completionStatus CompletionStatus  @default(IN_PROGRESS)
+  duration         Int? // Duration in milliseconds
+  startedAt        DateTime          @default(now())
+  completedAt      DateTime?
+  customerId       String
+  journeyId        String
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  journey  Journey  @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+
+  @@map("journey_paths")
+}
+
+enum CompletionStatus {
+  IN_PROGRESS
+  COMPLETED
+  DROPPED_OFF
+}
+
+model Insight {
+  id          String      @id @default(cuid())
+  type        InsightType
+  title       String
+  description String
+  impactScore Float // 0-100 scale
+  priority    Priority    @default(MEDIUM)
+  status      InsightStatus @default(PENDING)
+  metadata    Json        @default("{}")
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  journeyId   String
+
+  journey Journey @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+
+  @@map("insights")
+}
+
+enum InsightType {
+  BOTTLENECK
+  OPTIMIZATION
+  ANOMALY
+  PREDICTION
+  RECOMMENDATION
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum InsightStatus {
+  PENDING
+  ACKNOWLEDGED
+  IN_PROGRESS
+  RESOLVED
+  DISMISSED
+}
+
+model ApiKey {
+  id        String   @id @default(cuid())
+  name      String
+  key       String   @unique
+  isActive  Boolean  @default(true)
+  lastUsed  DateTime?
+  createdAt DateTime @default(now())
+  orgId     String
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@map("api_keys")
+}
