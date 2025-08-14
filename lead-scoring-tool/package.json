@@ -1,0 +1,33 @@
+{
+  "name": "lead-scoring-tool",
+  "version": "1.0.0",
+  "description": "AI-Powered Lead Qualification Platform",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\"",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "cd backend && python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000",
+    "build": "npm run build:frontend",
+    "build:frontend": "cd frontend && npm run build",
+    "test": "npm run test:frontend && npm run test:backend",
+    "test:frontend": "cd frontend && npm test",
+    "test:backend": "cd backend && python -m pytest",
+    "install:all": "npm run install:frontend && npm run install:backend",
+    "install:frontend": "cd frontend && npm install",
+    "install:backend": "cd backend && pip install -r requirements.txt",
+    "setup": "npm run install:all && docker-compose up -d postgres redis clickhouse kafka",
+    "clean": "rm -rf frontend/.next frontend/node_modules backend/__pycache__ backend/venv"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "keywords": [
+    "lead-scoring",
+    "ai",
+    "machine-learning",
+    "sales",
+    "marketing",
+    "saas"
+  ],
+  "author": "Lead Scoring Team",
+  "license": "MIT"
+}
