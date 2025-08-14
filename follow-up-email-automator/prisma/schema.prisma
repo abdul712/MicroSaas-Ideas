@@ -1,0 +1,383 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Organizations (Multi-tenancy)
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  domain    String?
+  plan      String   @default("free") // free, pro, enterprise
+  settings  Json     @default("{}")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  users               User[]
+  emailLists          EmailList[]
+  contacts            Contact[]
+  emailTemplates      EmailTemplate[]
+  automationWorkflows AutomationWorkflow[]
+  emailCampaigns      EmailCampaign[]
+  emailSends          EmailSend[]
+  integrations        Integration[]
+  webhooks            Webhook[]
+
+  @@map("organizations")
+}
+
+// Users
+model User {
+  id             String    @id @default(cuid())
+  organizationId String    @map("organization_id")
+  email          String    @unique
+  passwordHash   String?   @map("password_hash")
+  firstName      String?   @map("first_name")
+  lastName       String?   @map("last_name")
+  role           String    @default("user") // admin, user, viewer
+  settings       Json      @default("{}")
+  lastLoginAt    DateTime? @map("last_login_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sessions     Session[]
+  accounts     Account[]
+
+  @@map("users")
+}
+
+// NextAuth.js models
+model Account {
+  id                String  @id @default(cuid())
+  userId            String  @map("user_id")
+  type              String
+  provider          String
+  providerAccountId String  @map("provider_account_id")
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id")
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verificationtokens")
+}
+
+// Email Lists
+model EmailList {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  name           String
+  description    String?
+  tags           Json     @default("[]")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  organization     Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contactListItems ContactListItem[]
+
+  @@map("email_lists")
+}
+
+// Contacts
+model Contact {
+  id               String    @id @default(cuid())
+  organizationId   String    @map("organization_id")
+  email            String
+  firstName        String?   @map("first_name")
+  lastName         String?   @map("last_name")
+  properties       Json      @default("{}")
+  engagementScore  Int       @default(0) @map("engagement_score")
+  status           String    @default("active") // active, unsubscribed, bounced, complained
+  unsubscribedAt   DateTime? @map("unsubscribed_at")
+  lastEngagedAt    DateTime? @map("last_engaged_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contactListItems ContactListItem[]
+  emailSends       EmailSend[]
+  contactEvents    ContactEvent[]
+
+  @@unique([organizationId, email])
+  @@map("contacts")
+}
+
+// Contact List Items (Many-to-many relationship)
+model ContactListItem {
+  id          String   @id @default(cuid())
+  contactId   String   @map("contact_id")
+  emailListId String   @map("email_list_id")
+  addedAt     DateTime @default(now()) @map("added_at")
+
+  // Relations
+  contact   Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  emailList EmailList @relation(fields: [emailListId], references: [id], onDelete: Cascade)
+
+  @@unique([contactId, emailListId])
+  @@map("contact_list_items")
+}
+
+// Email Templates
+model EmailTemplate {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  name           String
+  subject        String
+  content        String   @db.Text
+  templateType   String   @default("html") @map("template_type") // html, text, mjml
+  variables      Json     @default("[]")
+  category       String   @default("general")
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  emailCampaigns EmailCampaign[]
+
+  @@map("email_templates")
+}
+
+// Automation Workflows
+model AutomationWorkflow {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  name           String
+  description    String?
+  triggerType    String   @map("trigger_type") // time_based, event_based, manual
+  triggerConfig  Json     @default("{}") @map("trigger_config")
+  workflowConfig Json     @default("{}") @map("workflow_config")
+  status         String   @default("draft") // draft, active, paused, archived
+  isActive       Boolean  @default(false) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  emailCampaigns EmailCampaign[]
+  workflowRuns   WorkflowRun[]
+
+  @@map("automation_workflows")
+}
+
+// Workflow Runs
+model WorkflowRun {
+  id                    String    @id @default(cuid())
+  automationWorkflowId  String    @map("automation_workflow_id")
+  contactId             String?   @map("contact_id")
+  status                String    @default("running") // running, completed, failed, cancelled
+  currentStep           Int       @default(0) @map("current_step")
+  data                  Json      @default("{}")
+  startedAt             DateTime  @default(now()) @map("started_at")
+  completedAt           DateTime? @map("completed_at")
+  errorMessage          String?   @map("error_message")
+
+  // Relations
+  automationWorkflow AutomationWorkflow @relation(fields: [automationWorkflowId], references: [id], onDelete: Cascade)
+
+  @@map("workflow_runs")
+}
+
+// Email Campaigns
+model EmailCampaign {
+  id                   String    @id @default(cuid())
+  organizationId       String    @map("organization_id")
+  automationWorkflowId String?   @map("automation_workflow_id")
+  templateId           String?   @map("template_id")
+  name                 String
+  subject              String
+  content              String    @db.Text
+  fromEmail            String    @map("from_email")
+  fromName             String    @map("from_name")
+  replyToEmail         String?   @map("reply_to_email")
+  scheduledAt          DateTime? @map("scheduled_at")
+  sentAt               DateTime? @map("sent_at")
+  status               String    @default("draft") // draft, scheduled, sending, sent, cancelled
+  campaignType         String    @default("regular") @map("campaign_type") // regular, automation, ab_test
+  stats                Json      @default("{}")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  organization         Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  automationWorkflow   AutomationWorkflow? @relation(fields: [automationWorkflowId], references: [id])
+  template             EmailTemplate?      @relation(fields: [templateId], references: [id])
+  emailSends           EmailSend[]
+  abTestVariants       AbTestVariant[]
+
+  @@map("email_campaigns")
+}
+
+// A/B Test Variants
+model AbTestVariant {
+  id              String   @id @default(cuid())
+  emailCampaignId String   @map("email_campaign_id")
+  variantName     String   @map("variant_name")
+  subject         String
+  content         String   @db.Text
+  percentage      Int      @default(50)
+  stats           Json     @default("{}")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  // Relations
+  emailCampaign EmailCampaign @relation(fields: [emailCampaignId], references: [id], onDelete: Cascade)
+
+  @@map("ab_test_variants")
+}
+
+// Email Sends
+model EmailSend {
+  id               String    @id @default(cuid())
+  organizationId   String    @map("organization_id")
+  campaignId       String    @map("campaign_id")
+  contactId        String    @map("contact_id")
+  email            String
+  subject          String
+  content          String    @db.Text
+  provider         String // sendgrid, aws_ses
+  providerId       String?   @map("provider_id")
+  messageId        String?   @map("message_id")
+  status           String    @default("queued") // queued, sending, sent, delivered, bounced, complained, failed
+  sentAt           DateTime? @map("sent_at")
+  deliveredAt      DateTime? @map("delivered_at")
+  openedAt         DateTime? @map("opened_at")
+  clickedAt        DateTime? @map("clicked_at")
+  bouncedAt        DateTime? @map("bounced_at")
+  complainedAt     DateTime? @map("complained_at")
+  unsubscribedAt   DateTime? @map("unsubscribed_at")
+  errorMessage     String?   @map("error_message")
+  metadata         Json      @default("{}")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  organization  Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  campaign      EmailCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contact       Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  emailClicks   EmailClick[]
+
+  @@map("email_sends")
+}
+
+// Email Clicks
+model EmailClick {
+  id          String   @id @default(cuid())
+  emailSendId String   @map("email_send_id")
+  url         String
+  clickedAt   DateTime @default(now()) @map("clicked_at")
+  ipAddress   String?  @map("ip_address")
+  userAgent   String?  @map("user_agent")
+
+  // Relations
+  emailSend EmailSend @relation(fields: [emailSendId], references: [id], onDelete: Cascade)
+
+  @@map("email_clicks")
+}
+
+// Contact Events
+model ContactEvent {
+  id         String   @id @default(cuid())
+  contactId  String   @map("contact_id")
+  eventType  String   @map("event_type") // email_open, email_click, website_visit, purchase, etc.
+  eventData  Json     @default("{}") @map("event_data")
+  occurredAt DateTime @default(now()) @map("occurred_at")
+
+  // Relations
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@map("contact_events")
+}
+
+// Integrations
+model Integration {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  name           String
+  provider       String // shopify, woocommerce, salesforce, hubspot, etc.
+  config         Json     @default("{}")
+  credentials    Json     @default("{}") // Encrypted
+  isActive       Boolean  @default(true) @map("is_active")
+  lastSyncAt     DateTime? @map("last_sync_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("integrations")
+}
+
+// Webhooks
+model Webhook {
+  id             String   @id @default(cuid())
+  organizationId String   @map("organization_id")
+  url            String
+  events         Json     @default("[]") // Array of event types to listen for
+  secret         String
+  isActive       Boolean  @default(true) @map("is_active")
+  lastTriggeredAt DateTime? @map("last_triggered_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  webhookDeliveries WebhookDelivery[]
+
+  @@map("webhooks")
+}
+
+// Webhook Deliveries
+model WebhookDelivery {
+  id              String    @id @default(cuid())
+  webhookId       String    @map("webhook_id")
+  eventType       String    @map("event_type")
+  payload         Json
+  response        Json?
+  statusCode      Int?      @map("status_code")
+  deliveredAt     DateTime? @map("delivered_at")
+  failedAt        DateTime? @map("failed_at")
+  retryCount      Int       @default(0) @map("retry_count")
+  nextRetryAt     DateTime? @map("next_retry_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  // Relations
+  webhook Webhook @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  @@map("webhook_deliveries")
+}
