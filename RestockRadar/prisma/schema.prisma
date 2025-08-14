@@ -1,0 +1,292 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  password  String
+  role      Role     @default(USER)
+  stores    Store[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("users")
+}
+
+model Store {
+  id                String            @id @default(cuid())
+  name              String
+  domain            String?
+  platform          Platform
+  apiCredentials    Json?             // Encrypted API credentials
+  subscriptionPlan  SubscriptionPlan  @default(FREE)
+  settings          Json?
+  userId            String
+  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  products          Product[]
+  suppliers         Supplier[]
+  inventoryLogs     InventoryLog[]
+  forecasts         DemandForecast[]
+  reorderRules      ReorderRule[]
+  notifications     Notification[]
+  
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  @@map("stores")
+}
+
+model Product {
+  id               String            @id @default(cuid())
+  storeId          String
+  store            Store             @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  
+  externalId       String
+  title            String
+  description      String?
+  sku              String?
+  category         String?
+  
+  // Inventory tracking
+  currentStock     Int               @default(0)
+  reorderPoint     Int               @default(10)
+  maxStock         Int               @default(100)
+  cost             Decimal?          @db.Decimal(10, 2)
+  price            Decimal?          @db.Decimal(10, 2)
+  
+  // Product metadata
+  variants         Json?             // Size, color, etc.
+  images           String[]
+  weight           Decimal?          @db.Decimal(10, 3)
+  dimensions       Json?
+  
+  // Supplier relationship
+  supplierId       String?
+  supplier         Supplier?         @relation(fields: [supplierId], references: [id])
+  
+  // Related data
+  inventoryLogs    InventoryLog[]
+  forecasts        DemandForecast[]
+  reorderRules     ReorderRule[]
+  notifications    Notification[]
+  
+  lastSynced       DateTime?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@unique([storeId, externalId])
+  @@map("products")
+}
+
+model Supplier {
+  id               String    @id @default(cuid())
+  storeId          String
+  store            Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  
+  name             String
+  email            String?
+  phone            String?
+  address          Json?
+  
+  // Performance metrics
+  leadTime         Int       @default(7) // Days
+  reliability      Decimal   @default(95) @db.Decimal(5, 2) // Percentage
+  qualityRating    Decimal   @default(5) @db.Decimal(3, 2) // Out of 5
+  
+  products         Product[]
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@map("suppliers")
+}
+
+model InventoryLog {
+  id               String         @id @default(cuid())
+  storeId          String
+  store            Store          @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  productId        String
+  product          Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  
+  type             InventoryType
+  quantity         Int
+  previousStock    Int
+  newStock         Int
+  cost             Decimal?       @db.Decimal(10, 2)
+  reason           String?
+  
+  createdAt        DateTime       @default(now())
+
+  @@index([productId, createdAt])
+  @@map("inventory_logs")
+}
+
+model DemandForecast {
+  id               String    @id @default(cuid())
+  storeId          String
+  store            Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  productId        String
+  product          Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  
+  forecastDate     DateTime
+  predictedDemand  Int
+  confidence       Decimal   @db.Decimal(5, 2) // Percentage
+  actualDemand     Int?
+  
+  modelVersion     String
+  features         Json      // Features used for prediction
+  
+  createdAt        DateTime  @default(now())
+
+  @@unique([productId, forecastDate])
+  @@map("demand_forecasts")
+}
+
+model ReorderRule {
+  id               String    @id @default(cuid())
+  storeId          String
+  store            Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  productId        String
+  product          Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  
+  isActive         Boolean   @default(true)
+  reorderPoint     Int
+  reorderQuantity  Int
+  maxStock         Int?
+  
+  // Auto-reorder settings
+  autoReorder      Boolean   @default(false)
+  leadTimeDays     Int       @default(7)
+  safetyStock      Int       @default(5)
+  
+  lastTriggered    DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@unique([storeId, productId])
+  @@map("reorder_rules")
+}
+
+model Notification {
+  id               String            @id @default(cuid())
+  storeId          String
+  store            Store             @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  productId        String?
+  product          Product?          @relation(fields: [productId], references: [id])
+  
+  type             NotificationType
+  title            String
+  message          String
+  priority         Priority          @default(MEDIUM)
+  
+  isRead           Boolean           @default(false)
+  channels         NotificationChannel[]
+  
+  metadata         Json?
+  
+  createdAt        DateTime          @default(now())
+  readAt           DateTime?
+
+  @@index([storeId, isRead])
+  @@map("notifications")
+}
+
+// Integration tables for multi-channel sync
+model Integration {
+  id               String            @id @default(cuid())
+  storeId          String
+  
+  platform         Platform
+  credentials      Json              // Encrypted credentials
+  isActive         Boolean           @default(true)
+  lastSync         DateTime?
+  syncInterval     Int               @default(3600) // Seconds
+  
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@unique([storeId, platform])
+  @@map("integrations")
+}
+
+// Analytics and reporting
+model AnalyticsEvent {
+  id               String    @id @default(cuid())
+  storeId          String
+  
+  eventType        String
+  eventData        Json
+  userId           String?
+  sessionId        String?
+  
+  createdAt        DateTime  @default(now())
+
+  @@index([storeId, eventType, createdAt])
+  @@map("analytics_events")
+}
+
+// Enums
+enum Role {
+  USER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum Platform {
+  SHOPIFY
+  AMAZON
+  EBAY
+  WOOCOMMERCE
+  MAGENTO
+  BIGCOMMERCE
+  CUSTOM
+}
+
+enum SubscriptionPlan {
+  FREE
+  STARTER
+  GROWTH
+  SCALE
+  ENTERPRISE
+}
+
+enum InventoryType {
+  PURCHASE
+  SALE
+  ADJUSTMENT
+  RETURN
+  DAMAGED
+  TRANSFER
+}
+
+enum NotificationType {
+  LOW_STOCK
+  REORDER_ALERT
+  SUPPLIER_ISSUE
+  FORECAST_UPDATE
+  SYSTEM_ALERT
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum NotificationChannel {
+  EMAIL
+  SMS
+  PUSH
+  IN_APP
+}
