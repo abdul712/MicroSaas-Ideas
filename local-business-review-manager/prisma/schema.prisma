@@ -1,0 +1,353 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Users and Authentication
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  password  String?
+  role      UserRole @default(OWNER)
+  avatar    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relationships
+  businesses Business[]
+  sessions   Session[]
+  accounts   Account[]
+
+  @@map("users")
+}
+
+enum UserRole {
+  OWNER
+  MANAGER
+  STAFF
+}
+
+// NextAuth.js required models
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+// Business/Location Management
+model Business {
+  id          String  @id @default(cuid())
+  name        String
+  address     String?
+  phone       String?
+  website     String?
+  industry    String?
+  description String?
+  logo        String?
+  userId      String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relationships
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  locations       Location[]
+  reviewAccounts  ReviewAccount[]
+  invitations     ReviewInvitation[]
+  analyticsSnapshots AnalyticsSnapshot[]
+  subscriptions   Subscription[]
+
+  @@map("businesses")
+}
+
+model Location {
+  id             String  @id @default(cuid())
+  name           String
+  address        String
+  phone          String?
+  googlePlaceId  String?
+  yelpId         String?
+  facebookPageId String?
+  businessId     String
+  isActive       Boolean @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relationships
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  reviews  Review[]
+
+  @@map("locations")
+}
+
+// Review Platform Integration
+model ReviewAccount {
+  id           String    @id @default(cuid())
+  platform     Platform
+  accountId    String
+  accessToken  String // Encrypted
+  refreshToken String? // Encrypted
+  businessId   String
+  isActive     Boolean   @default(true)
+  lastSyncAt   DateTime?
+  syncError    String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  // Relationships
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([platform, businessId])
+  @@map("review_accounts")
+}
+
+enum Platform {
+  GOOGLE_MY_BUSINESS
+  FACEBOOK
+  YELP
+  TRIPADVISOR
+  TRUSTPILOT
+}
+
+// Review Management
+model Review {
+  id                String        @id @default(cuid())
+  platform          Platform
+  platformReviewId  String
+  locationId        String
+  customerName      String?
+  customerEmail     String?
+  customerAvatar    String?
+  rating            Int // 1-5
+  reviewText        String?
+  reviewDate        DateTime
+  isPublic          Boolean       @default(true)
+  isResponded       Boolean       @default(false)
+  status            ReviewStatus  @default(NEW)
+  flaggedReason     String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  // Relationships
+  location        Location          @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  response        ReviewResponse?
+  sentimentScore  SentimentScore?
+  invitations     ReviewInvitation[]
+
+  @@unique([platform, platformReviewId])
+  @@index([locationId, createdAt])
+  @@index([platform, status])
+  @@index([rating])
+  @@map("reviews")
+}
+
+enum ReviewStatus {
+  NEW
+  RESPONDED
+  FLAGGED
+  RESOLVED
+  ARCHIVED
+}
+
+model ReviewResponse {
+  id            String   @id @default(cuid())
+  reviewId      String   @unique
+  responseText  String
+  responseDate  DateTime @default(now())
+  isAIGenerated Boolean  @default(false)
+  approvedBy    String?
+  publishedAt   DateTime?
+  platformStatus String? // SUCCESS, FAILED, PENDING
+  errorMessage  String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relationships
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@map("review_responses")
+}
+
+// AI and Analytics
+model SentimentScore {
+  id               String    @id @default(cuid())
+  reviewId         String    @unique
+  positiveScore    Float
+  negativeScore    Float
+  neutralScore     Float
+  overallSentiment Sentiment
+  confidence       Float
+  topics           Json? // Array of detected topics
+  keywords         Json? // Array of keywords
+  createdAt        DateTime  @default(now())
+
+  // Relationships
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@map("sentiment_scores")
+}
+
+enum Sentiment {
+  POSITIVE
+  NEGATIVE
+  NEUTRAL
+}
+
+// Review Invitation System
+model ReviewInvitation {
+  id               String           @id @default(cuid())
+  businessId       String
+  reviewId         String?
+  customerName     String
+  customerEmail    String?
+  customerPhone    String?
+  invitationType   InvitationType
+  status           InvitationStatus @default(SENT)
+  sentAt           DateTime         @default(now())
+  openedAt         DateTime?
+  completedAt      DateTime?
+  expiresAt        DateTime
+  qrCode           String?
+  invitationUrl    String?
+  remindersSent    Int              @default(0)
+  maxReminders     Int              @default(2)
+  customMessage    String?
+
+  // Relationships
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  review   Review?   @relation(fields: [reviewId], references: [id])
+
+  @@map("review_invitations")
+}
+
+enum InvitationType {
+  EMAIL
+  SMS
+  QR_CODE
+  LINK
+}
+
+enum InvitationStatus {
+  SENT
+  OPENED
+  COMPLETED
+  EXPIRED
+  FAILED
+}
+
+// Analytics and Reporting
+model AnalyticsSnapshot {
+  id                    String   @id @default(cuid())
+  businessId            String
+  date                  DateTime @default(now())
+  totalReviews          Int      @default(0)
+  averageRating         Float    @default(0)
+  responseRate          Float    @default(0)
+  sentimentDistribution Json // {positive: %, negative: %, neutral: %}
+  platformBreakdown     Json // {gmb: count, facebook: count, etc}
+  ratingDistribution    Json // {1: count, 2: count, etc}
+  monthlyGrowth         Float?
+  competitorComparison  Json?
+
+  // Relationships
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, date])
+  @@map("analytics_snapshots")
+}
+
+// Subscription and Billing
+model Subscription {
+  id              String             @id @default(cuid())
+  businessId      String
+  planType        SubscriptionPlan
+  status          SubscriptionStatus
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  cancelAtPeriodEnd  Boolean         @default(false)
+  stripeCustomerId   String?
+  stripeSubscriptionId String?
+  maxLocations    Int
+  maxUsers        Int
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  // Relationships
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+enum SubscriptionPlan {
+  FREE
+  STARTER
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELED
+  PAST_DUE
+  UNPAID
+}
+
+// System Configuration
+model SystemConfig {
+  id    String @id @default(cuid())
+  key   String @unique
+  value Json
+  updatedAt DateTime @updatedAt
+
+  @@map("system_config")
+}
+
+// Audit Log
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String
+  resource  String
+  resourceId String?
+  oldData   Json?
+  newData   Json?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([resource, resourceId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
