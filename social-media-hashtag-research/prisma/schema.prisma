@@ -1,0 +1,295 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// NextAuth.js models
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  password      String?
+  role          UserRole  @default(USER)
+  plan          PlanType  @default(FREE)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  accounts      Account[]
+  sessions      Session[]
+  searches      HashtagSearch[]
+  savedSets     HashtagSet[]
+  competitors   CompetitorTrack[]
+  analytics     UserAnalytics[]
+  subscriptions Subscription[]
+
+  @@map("users")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// Core hashtag models
+model Hashtag {
+  id               String   @id @default(cuid())
+  tag              String   @unique
+  platform         Platform
+  postCount        BigInt   @default(0)
+  avgEngagement    Float    @default(0)
+  difficultyScore  Float    @default(0)
+  trendScore       Float    @default(0)
+  lastUpdated      DateTime @default(now())
+  createdAt        DateTime @default(now())
+
+  // Relations
+  history     HashtagHistory[]
+  setItems    HashtagSetItem[]
+  trends      TrendingTopic[]  @relation("TrendingHashtags")
+  competitors CompetitorHashtag[]
+
+  @@index([platform, trendScore])
+  @@index([platform, difficultyScore])
+  @@map("hashtags")
+}
+
+model HashtagHistory {
+  id             String   @id @default(cuid())
+  hashtagId      String
+  date           DateTime @default(now())
+  postCount      BigInt
+  engagementRate Float
+  topPosts       Json?
+  createdAt      DateTime @default(now())
+
+  hashtag Hashtag @relation(fields: [hashtagId], references: [id], onDelete: Cascade)
+
+  @@index([hashtagId, date])
+  @@map("hashtag_history")
+}
+
+model HashtagSearch {
+  id          String   @id @default(cuid())
+  userId      String
+  searchTerm  String
+  platform    Platform
+  results     Json
+  searchType  SearchType @default(KEYWORD)
+  createdAt   DateTime   @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("hashtag_searches")
+}
+
+model HashtagSet {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  description String?
+  isPublic    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user  User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items HashtagSetItem[]
+
+  @@index([userId, createdAt])
+  @@map("hashtag_sets")
+}
+
+model HashtagSetItem {
+  id          String @id @default(cuid())
+  setId       String
+  hashtagId   String
+  order       Int    @default(0)
+  performance Json?
+
+  set     HashtagSet @relation(fields: [setId], references: [id], onDelete: Cascade)
+  hashtag Hashtag    @relation(fields: [hashtagId], references: [id], onDelete: Cascade)
+
+  @@unique([setId, hashtagId])
+  @@map("hashtag_set_items")
+}
+
+model CompetitorTrack {
+  id               String   @id @default(cuid())
+  userId           String
+  competitorHandle String
+  platform         Platform
+  lastAnalyzed     DateTime?
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+
+  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  hashtags  CompetitorHashtag[]
+  analytics CompetitorAnalytics[]
+
+  @@unique([userId, competitorHandle, platform])
+  @@index([userId, isActive])
+  @@map("competitor_tracking")
+}
+
+model CompetitorHashtag {
+  id          String   @id @default(cuid())
+  trackId     String
+  hashtagId   String
+  usageCount  Int      @default(0)
+  lastUsed    DateTime
+  performance Json?
+
+  track   CompetitorTrack @relation(fields: [trackId], references: [id], onDelete: Cascade)
+  hashtag Hashtag         @relation(fields: [hashtagId], references: [id], onDelete: Cascade)
+
+  @@unique([trackId, hashtagId])
+  @@map("competitor_hashtags")
+}
+
+model CompetitorAnalytics {
+  id               String   @id @default(cuid())
+  trackId          String
+  date             DateTime @default(now())
+  totalPosts       Int      @default(0)
+  avgEngagement    Float    @default(0)
+  topHashtags      Json?
+  engagementTrends Json?
+
+  track CompetitorTrack @relation(fields: [trackId], references: [id], onDelete: Cascade)
+
+  @@index([trackId, date])
+  @@map("competitor_analytics")
+}
+
+model TrendingTopic {
+  id               String   @id @default(cuid())
+  topic            String
+  platform         Platform
+  region           String   @default("global")
+  trendStrength    Float    @default(0)
+  relatedHashtags  String[]
+  detectedAt       DateTime @default(now())
+  expiresAt        DateTime?
+
+  hashtags Hashtag[] @relation("TrendingHashtags")
+
+  @@index([platform, region, detectedAt])
+  @@map("trending_topics")
+}
+
+model UserAnalytics {
+  id               String   @id @default(cuid())
+  userId           String
+  date             DateTime @default(now())
+  searchesCount    Int      @default(0)
+  setsCreated      Int      @default(0)
+  competitorsAdded Int      @default(0)
+  apiCalls         Int      @default(0)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@map("user_analytics")
+}
+
+model Subscription {
+  id                 String            @id @default(cuid())
+  userId             String
+  plan               PlanType
+  status             SubscriptionStatus @default(ACTIVE)
+  stripeCustomerId   String?           @unique
+  stripeSubscriptionId String?         @unique
+  currentPeriodStart DateTime?
+  currentPeriodEnd   DateTime?
+  cancelAtPeriodEnd  Boolean           @default(false)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@map("subscriptions")
+}
+
+// Enums
+enum UserRole {
+  USER
+  ADMIN
+  MODERATOR
+}
+
+enum PlanType {
+  FREE
+  STARTER
+  PROFESSIONAL
+  BUSINESS
+  AGENCY
+}
+
+enum Platform {
+  INSTAGRAM
+  TWITTER
+  LINKEDIN
+  TIKTOK
+  FACEBOOK
+  YOUTUBE
+}
+
+enum SearchType {
+  KEYWORD
+  COMPETITOR
+  TRENDING
+  RELATED
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELED
+  PAST_DUE
+  UNPAID
+  TRIALING
+}
