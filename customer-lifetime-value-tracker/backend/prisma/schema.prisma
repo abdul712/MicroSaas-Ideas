@@ -1,0 +1,161 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Company {
+  id               String   @id @default(cuid())
+  name             String
+  slug             String   @unique
+  industry         String?
+  currency         String   @default("USD")
+  timezone         String   @default("UTC")
+  settings         Json     @default("{}")
+  subscriptionTier String   @default("starter") @map("subscription_tier")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  users             User[]
+  customers         Customer[]
+  transactions      Transaction[]
+  clvCalculations   ClvCalculation[]
+  customerSegments  CustomerSegment[]
+  integrations      Integration[]
+
+  @@map("companies")
+}
+
+model User {
+  id           String    @id @default(cuid())
+  companyId    String    @map("company_id")
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  firstName    String?   @map("first_name")
+  lastName     String?   @map("last_name")
+  role         String    @default("member")
+  isActive     Boolean   @default(true) @map("is_active")
+  lastLoginAt  DateTime? @map("last_login_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("users")
+}
+
+model Customer {
+  id                 String    @id @default(cuid())
+  companyId          String    @map("company_id")
+  externalId         String?   @map("external_id")
+  email              String?
+  firstName          String?   @map("first_name")
+  lastName           String?   @map("last_name")
+  firstPurchaseDate  DateTime? @map("first_purchase_date")
+  acquisitionChannel String?   @map("acquisition_channel")
+  acquisitionCost    Decimal?  @map("acquisition_cost") @db.Decimal(10, 2)
+  currentSegment     String?   @map("current_segment")
+  status             String    @default("active")
+  metadata           Json      @default("{}")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  company         Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  transactions    Transaction[]
+  clvCalculations ClvCalculation[]
+
+  @@unique([companyId, externalId])
+  @@map("customers")
+}
+
+model Transaction {
+  id              String   @id @default(cuid())
+  companyId       String   @map("company_id")
+  customerId      String   @map("customer_id")
+  externalId      String?  @map("external_id")
+  transactionDate DateTime @map("transaction_date")
+  amount          Decimal  @db.Decimal(12, 2)
+  currency        String   @default("USD")
+  type            String // purchase, refund, subscription
+  productId       String?  @map("product_id")
+  productCategory String?  @map("product_category")
+  paymentMethod   String?  @map("payment_method")
+  sourcePlatform  String?  @map("source_platform")
+  metadata        Json     @default("{}")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  // Relations
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@map("transactions")
+}
+
+model ClvCalculation {
+  id                    String   @id @default(cuid())
+  companyId             String   @map("company_id")
+  customerId            String   @map("customer_id")
+  calculationDate       DateTime @map("calculation_date") @db.Date
+  historicalValue       Decimal  @map("historical_value") @db.Decimal(12, 2)
+  predictedValue        Decimal? @map("predicted_value") @db.Decimal(12, 2)
+  totalClv              Decimal  @map("total_clv") @db.Decimal(12, 2)
+  predictionConfidence  Decimal? @map("prediction_confidence") @db.Decimal(3, 2)
+  churnProbability      Decimal? @map("churn_probability") @db.Decimal(3, 2)
+  calculationMethod     String   @map("calculation_method")
+  modelVersion          String?  @map("model_version")
+  createdAt             DateTime @default(now()) @map("created_at")
+
+  // Relations
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, customerId, calculationDate])
+  @@map("clv_calculations")
+}
+
+model CustomerSegment {
+  id            String   @id @default(cuid())
+  companyId     String   @map("company_id")
+  name          String
+  description   String?
+  criteria      Json
+  averageClv    Decimal? @map("average_clv") @db.Decimal(12, 2)
+  customerCount Int      @default(0) @map("customer_count")
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, name])
+  @@map("customer_segments")
+}
+
+model Integration {
+  id                  String    @id @default(cuid())
+  companyId           String    @map("company_id")
+  platform            String
+  configuration       Json
+  credentialsEncrypted String?   @map("credentials_encrypted")
+  isActive            Boolean   @default(true) @map("is_active")
+  lastSyncAt          DateTime? @map("last_sync_at")
+  syncStatus          String    @default("pending") @map("sync_status")
+  errorCount          Int       @default(0) @map("error_count")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("integrations")
+}
