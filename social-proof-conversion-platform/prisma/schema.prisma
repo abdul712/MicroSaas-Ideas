@@ -1,0 +1,233 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String       @id @default(cuid())
+  email          String       @unique
+  name           String?
+  emailVerified  DateTime?
+  image          String?
+  role           UserRole     @default(MEMBER)
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  accounts Account[]
+  sessions Session[]
+  abTests  AbTest[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+model Organization {
+  id          String             @id @default(cuid())
+  name        String
+  domain      String
+  apiKey      String             @unique
+  plan        SubscriptionPlan   @default(STARTER)
+  settings    Json               @default("{}")
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  users       User[]
+  widgets     Widget[]
+  campaigns   Campaign[]
+  events      Event[]
+  abTests     AbTest[]
+  integrations Integration[]
+
+  @@map("organizations")
+}
+
+model Widget {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  domain         String
+  settings       Json         @default("{}")
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  campaigns Campaign[]
+
+  @@map("widgets")
+}
+
+model Campaign {
+  id             String         @id @default(cuid())
+  organizationId String
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  widgetId       String
+  widget         Widget         @relation(fields: [widgetId], references: [id], onDelete: Cascade)
+  name           String
+  type           CampaignType
+  rules          Json           @default("{}")
+  settings       Json           @default("{}")
+  isActive       Boolean        @default(true)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  events Event[]
+
+  @@map("campaigns")
+}
+
+model Event {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  campaignId     String?
+  campaign       Campaign?    @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  type           EventType
+  data           Json
+  location       Json?
+  visitorId      String?
+  sessionId      String?
+  pageUrl        String?
+  deviceType     String?
+  createdAt      DateTime     @default(now())
+
+  @@map("events")
+}
+
+model AbTest {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id])
+  name           String
+  description    String?
+  variants       Json         // Array of variant configurations
+  trafficSplit   Json         // Percentage split between variants
+  status         AbTestStatus @default(DRAFT)
+  startDate      DateTime?
+  endDate        DateTime?
+  results        Json?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@map("ab_tests")
+}
+
+model Integration {
+  id             String          @id @default(cuid())
+  organizationId String
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  type           IntegrationType
+  name           String
+  config         Json
+  isActive       Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@map("integrations")
+}
+
+enum UserRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum SubscriptionPlan {
+  STARTER
+  GROWTH
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+enum CampaignType {
+  PURCHASE
+  REVIEW
+  VISITOR_COUNT
+  SIGNUP
+  CUSTOM_MESSAGE
+  LIMITED_STOCK
+  SOCIAL_ACTIVITY
+}
+
+enum EventType {
+  PAGE_VIEW
+  PURCHASE
+  SIGNUP
+  REVIEW_SUBMITTED
+  CART_ABANDONMENT
+  FORM_SUBMISSION
+  VISITOR_JOIN
+  VISITOR_LEAVE
+  CUSTOM_EVENT
+}
+
+enum AbTestStatus {
+  DRAFT
+  RUNNING
+  PAUSED
+  COMPLETED
+}
+
+enum IntegrationType {
+  SHOPIFY
+  WOOCOMMERCE
+  BIGCOMMERCE
+  STRIPE
+  PAYPAL
+  MAILCHIMP
+  KLAVIYO
+  GOOGLE_ANALYTICS
+  FACEBOOK_PIXEL
+  HUBSPOT
+  SALESFORCE
+  CUSTOM_WEBHOOK
+}
