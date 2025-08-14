@@ -1,0 +1,73 @@
+# Dependencies
+node_modules
+npm-debug.log*
+
+# Next.js
+.next/
+out/
+
+# Production build
+dist/
+build/
+
+# Environment variables
+.env*
+!.env.example
+
+# Logs
+logs
+*.log
+
+# Testing
+coverage/
+.jest-cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Docker
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# Documentation
+README.md
+docs/
+
+# Temporary files
+tmp/
+temp/
+
+# Database
+*.db
+*.sqlite
+
+# Uploads (exclude from image, mount as volume)
+uploads/
+
+# Prisma (will be generated during build)
+# prisma/migrations/
+
+# Tests
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/*.spec.tsx
+__tests__/
+
+# Development tools
+.eslintrc*
+.prettierrc*
+jest.config.*
+playwright.config.*

@@ -1,0 +1,477 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Organizations (Multi-tenant)
+model Organization {
+  id          String   @id @default(cuid())
+  name        String
+  domain      String?  @unique
+  plan        Plan     @default(STARTER)
+  settings    Json     @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  users       User[]
+  leadMagnets LeadMagnet[]
+  templates   Template[]
+  brandKits   BrandKit[]
+  analytics   Analytics[]
+  webhooks    Webhook[]
+  
+  @@map("organizations")
+}
+
+enum Plan {
+  STARTER
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+// Users with RBAC
+model User {
+  id             String   @id @default(cuid())
+  email          String   @unique
+  name           String?
+  image          String?
+  role           Role     @default(EDITOR)
+  organizationId String
+  profile        Json     @default("{}")
+  lastActive     DateTime @default(now())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sessions       Session[]
+  accounts       Account[]
+  leadMagnets    LeadMagnet[]
+  aiGenerations  AIGeneration[]
+  collaborations Collaboration[]
+  
+  @@map("users")
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  EDITOR
+  VIEWER
+}
+
+// NextAuth.js models
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// Lead Magnets
+model LeadMagnet {
+  id             String        @id @default(cuid())
+  name           String
+  type           LeadMagnetType
+  content        Json          @default("{}")
+  design         Json          @default("{}")
+  status         Status        @default(DRAFT)
+  organizationId String
+  createdById    String
+  conversionData Json          @default("{}")
+  metadata       Json          @default("{}")
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  // Relations
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy      User           @relation(fields: [createdById], references: [id])
+  abTests        ABTest[]
+  conversions    Conversion[]
+  distributions  Distribution[]
+  collaborations Collaboration[]
+  
+  @@map("lead_magnets")
+}
+
+enum LeadMagnetType {
+  EBOOK
+  CHECKLIST
+  TEMPLATE
+  CALCULATOR
+  INFOGRAPHIC
+  VIDEO
+  WEBINAR
+  TOOLKIT
+}
+
+enum Status {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+// AI Content Generation
+model AIGeneration {
+  id           String   @id @default(cuid())
+  organizationId String
+  userId       String
+  prompt       String
+  content      Json     @default("{}")
+  modelUsed    String
+  tokensUsed   Int      @default(0)
+  qualityScore Float?
+  type         String
+  metadata     Json     @default("{}")
+  createdAt    DateTime @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id])
+  
+  @@map("ai_generations")
+}
+
+// A/B Testing
+model ABTest {
+  id               String   @id @default(cuid())
+  leadMagnetId     String
+  name             String
+  variants         Json     @default("[]")
+  trafficSplit     Json     @default("{}")
+  results          Json     @default("{}")
+  statisticalSignificance Float?
+  status           ABTestStatus @default(RUNNING)
+  startDate        DateTime @default(now())
+  endDate          DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Relations
+  leadMagnet LeadMagnet @relation(fields: [leadMagnetId], references: [id], onDelete: Cascade)
+  
+  @@map("ab_tests")
+}
+
+enum ABTestStatus {
+  DRAFT
+  RUNNING
+  COMPLETED
+  PAUSED
+}
+
+// Analytics & Conversion Tracking
+model Conversion {
+  id           String   @id @default(cuid())
+  leadMagnetId String
+  visitorId    String
+  source       String?
+  medium       String?
+  campaign     String?
+  convertedAt  DateTime @default(now())
+  metadata     Json     @default("{}")
+  ipAddress    String?
+  userAgent    String?
+  location     Json     @default("{}")
+
+  // Relations
+  leadMagnet LeadMagnet @relation(fields: [leadMagnetId], references: [id], onDelete: Cascade)
+  
+  @@map("conversions")
+}
+
+// Templates
+model Template {
+  id             String       @id @default(cuid())
+  name           String
+  description    String?
+  category       String
+  industry       String?
+  type           LeadMagnetType
+  design         Json         @default("{}")
+  content        Json         @default("{}")
+  organizationId String?
+  isPublic       Boolean      @default(false)
+  isPremium      Boolean      @default(false)
+  tags           String[]     @default([])
+  previewUrl     String?
+  usageCount     Int          @default(0)
+  rating         Float        @default(0)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  // Relations
+  organization Organization? @relation(fields: [organizationId], references: [id])
+  
+  @@map("templates")
+}
+
+// Brand Kits
+model BrandKit {
+  id             String   @id @default(cuid())
+  name           String
+  organizationId String
+  colors         Json     @default("{}")
+  fonts          Json     @default("{}")
+  logos          Json     @default("{}")
+  settings       Json     @default("{}")
+  isDefault      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  @@map("brand_kits")
+}
+
+// Multi-Channel Distribution
+model Distribution {
+  id           String            @id @default(cuid())
+  leadMagnetId String
+  type         DistributionType
+  configuration Json            @default("{}")
+  analytics     Json            @default("{}")
+  isActive      Boolean         @default(true)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  // Relations
+  leadMagnet LeadMagnet @relation(fields: [leadMagnetId], references: [id], onDelete: Cascade)
+  
+  @@map("distributions")
+}
+
+enum DistributionType {
+  WEBSITE
+  EMAIL
+  SOCIAL
+  QR_CODE
+  API
+  WEBHOOK
+}
+
+// Real-time Collaboration
+model Collaboration {
+  id           String   @id @default(cuid())
+  leadMagnetId String
+  userId       String
+  operation    Json     @default("{}")
+  timestamp    DateTime @default(now())
+  metadata     Json     @default("{}")
+
+  // Relations
+  leadMagnet LeadMagnet @relation(fields: [leadMagnetId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id])
+  
+  @@map("collaborations")
+}
+
+// Analytics Dashboard
+model Analytics {
+  id             String   @id @default(cuid())
+  organizationId String
+  type           String
+  data           Json     @default("{}")
+  period         String
+  createdAt      DateTime @default(now())
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  @@map("analytics")
+}
+
+// Integration Hub
+model Integration {
+  id             String        @id @default(cuid())
+  organizationId String
+  type           IntegrationType
+  name           String
+  configuration  Json          @default("{}")
+  credentials    Json          @default("{}")
+  isActive       Boolean       @default(true)
+  lastSync       DateTime?
+  syncStatus     SyncStatus    @default(IDLE)
+  errorLog       Json          @default("[]")
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@map("integrations")
+}
+
+enum IntegrationType {
+  CRM_HUBSPOT
+  CRM_SALESFORCE
+  CRM_PIPEDRIVE
+  EMAIL_MAILCHIMP
+  EMAIL_CONVERTKIT
+  EMAIL_ACTIVECAMPAIGN
+  ANALYTICS_GOOGLE
+  ANALYTICS_MIXPANEL
+  SOCIAL_FACEBOOK
+  SOCIAL_LINKEDIN
+  AUTOMATION_ZAPIER
+  AUTOMATION_MAKE
+}
+
+enum SyncStatus {
+  IDLE
+  SYNCING
+  SUCCESS
+  ERROR
+}
+
+// Webhooks
+model Webhook {
+  id             String      @id @default(cuid())
+  organizationId String
+  url            String
+  events         String[]    @default([])
+  secret         String
+  isActive       Boolean     @default(true)
+  lastDelivery   DateTime?
+  deliveryStatus WebhookStatus @default(ACTIVE)
+  failureCount   Int         @default(0)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  deliveries   WebhookDelivery[]
+  
+  @@map("webhooks")
+}
+
+enum WebhookStatus {
+  ACTIVE
+  FAILED
+  DISABLED
+}
+
+model WebhookDelivery {
+  id           String   @id @default(cuid())
+  webhookId    String
+  payload      Json     @default("{}")
+  response     Json?
+  statusCode   Int?
+  success      Boolean  @default(false)
+  retryCount   Int      @default(0)
+  deliveredAt  DateTime @default(now())
+
+  // Relations
+  webhook Webhook @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+  
+  @@map("webhook_deliveries")
+}
+
+// Usage Tracking
+model Usage {
+  id             String   @id @default(cuid())
+  organizationId String
+  type           String
+  count          Int      @default(0)
+  period         String
+  date           DateTime @default(now())
+
+  @@unique([organizationId, type, period, date])
+  @@map("usage")
+}
+
+// Subscription & Billing
+model Subscription {
+  id             String           @id @default(cuid())
+  organizationId String           @unique
+  plan           Plan
+  status         SubscriptionStatus
+  stripeCustomerId String?
+  stripeSubscriptionId String?
+  currentPeriodStart DateTime?
+  currentPeriodEnd DateTime?
+  cancelAtPeriodEnd Boolean       @default(false)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@map("subscriptions")
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELED
+  INCOMPLETE
+  INCOMPLETE_EXPIRED
+  PAST_DUE
+  TRIALING
+  UNPAID
+}
+
+// Audit Logs
+model AuditLog {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String?
+  action         String
+  resource       String
+  resourceId     String?
+  metadata       Json     @default("{}")
+  ipAddress      String?
+  userAgent      String?
+  createdAt      DateTime @default(now())
+
+  @@map("audit_logs")
+}
+
+// File Storage
+model File {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  originalName   String
+  mimeType       String
+  size           Int
+  url            String
+  storageProvider String
+  metadata       Json     @default("{}")
+  createdAt      DateTime @default(now())
+
+  @@map("files")
+}
