@@ -1,0 +1,437 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  password      String?
+  emailVerified DateTime?
+  image         String?
+  role          UserRole  @default(USER)
+  
+  // Organization relationship
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  
+  // User settings
+  timezone      String    @default("UTC")
+  notifications Boolean   @default(true)
+  
+  // Audit fields
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  lastLoginAt   DateTime?
+  
+  // Relationships
+  sessions      Session[]
+  accounts      Account[]
+  alerts        Alert[]
+  reports       Report[]
+  
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+enum UserRole {
+  USER
+  ADMIN
+  ORGANIZATION_ADMIN
+}
+
+model Organization {
+  id          String   @id @default(cuid())
+  name        String
+  domain      String?  @unique
+  industry    String?
+  size        String?
+  plan        Plan     @default(STARTER)
+  
+  // Subscription details
+  stripeCustomerId       String?   @unique
+  stripeSubscriptionId   String?   @unique
+  subscriptionStatus     String?
+  subscriptionPeriodEnd  DateTime?
+  
+  // Usage limits
+  competitorLimit       Int       @default(5)
+  alertLimit           Int       @default(10)
+  reportLimit          Int       @default(5)
+  
+  // Audit fields
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  // Relationships
+  users        User[]
+  competitors  Competitor[]
+  alerts       Alert[]
+  reports      Report[]
+  
+  @@map("organizations")
+}
+
+enum Plan {
+  STARTER
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+model Competitor {
+  id             String   @id @default(cuid())
+  name           String
+  domain         String
+  industry       String?
+  description    String?
+  logo           String?
+  
+  // Monitoring settings
+  isActive       Boolean  @default(true)
+  monitorWebsite Boolean  @default(true)
+  monitorSocial  Boolean  @default(true)
+  monitorSEO     Boolean  @default(true)
+  monitorPricing Boolean  @default(true)
+  
+  // Social media accounts
+  twitterHandle  String?
+  linkedinUrl    String?
+  facebookUrl    String?
+  instagramUrl   String?
+  
+  // Organization relationship
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  // Audit fields
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  // Relationships
+  metrics        CompetitorMetric[]
+  changes        CompetitorChange[]
+  insights       CompetitorInsight[]
+  
+  @@unique([organizationId, domain])
+  @@map("competitors")
+}
+
+model CompetitorMetric {
+  id           String   @id @default(cuid())
+  competitorId String
+  metricType   MetricType
+  value        Float
+  metadata     Json?
+  timestamp    DateTime @default(now())
+  
+  competitor   Competitor @relation(fields: [competitorId], references: [id], onDelete: Cascade)
+  
+  @@index([competitorId, metricType, timestamp])
+  @@map("competitor_metrics")
+}
+
+enum MetricType {
+  WEBSITE_TRAFFIC
+  SOCIAL_FOLLOWERS
+  SEO_RANKING
+  PRICING_CHANGE
+  CONTENT_VOLUME
+  SENTIMENT_SCORE
+  MARKET_SHARE
+  ENGAGEMENT_RATE
+}
+
+model CompetitorChange {
+  id           String     @id @default(cuid())
+  competitorId String
+  changeType   ChangeType
+  title        String
+  description  String?
+  url          String?
+  oldValue     String?
+  newValue     String?
+  severity     Severity   @default(MEDIUM)
+  metadata     Json?
+  detectedAt   DateTime   @default(now())
+  
+  competitor   Competitor @relation(fields: [competitorId], references: [id], onDelete: Cascade)
+  
+  @@index([competitorId, changeType, detectedAt])
+  @@map("competitor_changes")
+}
+
+enum ChangeType {
+  WEBSITE_UPDATE
+  PRICING_CHANGE
+  PRODUCT_LAUNCH
+  CONTENT_PUBLISH
+  SOCIAL_POST
+  SEO_RANKING
+  TEAM_CHANGE
+  FUNDING_NEWS
+}
+
+enum Severity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+model CompetitorInsight {
+  id           String      @id @default(cuid())
+  competitorId String
+  insightType  InsightType
+  title        String
+  description  String
+  confidence   Float       @default(0.5)
+  actionable   Boolean     @default(false)
+  metadata     Json?
+  generatedAt  DateTime    @default(now())
+  
+  competitor   Competitor @relation(fields: [competitorId], references: [id], onDelete: Cascade)
+  
+  @@index([competitorId, insightType, generatedAt])
+  @@map("competitor_insights")
+}
+
+enum InsightType {
+  TREND_ANALYSIS
+  OPPORTUNITY
+  THREAT
+  PATTERN
+  RECOMMENDATION
+  PREDICTION
+}
+
+model Alert {
+  id             String      @id @default(cuid())
+  userId         String?
+  organizationId String
+  title          String
+  description    String
+  alertType      AlertType
+  conditions     Json
+  isActive       Boolean     @default(true)
+  
+  // Notification settings
+  emailEnabled   Boolean     @default(true)
+  slackEnabled   Boolean     @default(false)
+  webhookUrl     String?
+  
+  // Audit fields
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  lastTriggered  DateTime?
+  triggerCount   Int         @default(0)
+  
+  user           User?        @relation(fields: [userId], references: [id])
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  notifications  AlertNotification[]
+  
+  @@map("alerts")
+}
+
+enum AlertType {
+  COMPETITOR_CHANGE
+  METRIC_THRESHOLD
+  KEYWORD_MENTION
+  SENTIMENT_CHANGE
+  PRICING_UPDATE
+  CONTENT_PUBLISH
+}
+
+model AlertNotification {
+  id          String              @id @default(cuid())
+  alertId     String
+  status      NotificationStatus  @default(PENDING)
+  channel     String              // email, slack, webhook
+  recipient   String
+  content     Json
+  sentAt      DateTime?
+  errorMessage String?
+  
+  alert       Alert @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  
+  @@index([alertId, status])
+  @@map("alert_notifications")
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  RETRYING
+}
+
+model Report {
+  id             String     @id @default(cuid())
+  userId         String?
+  organizationId String
+  title          String
+  description    String?
+  reportType     ReportType
+  parameters     Json
+  data           Json?
+  status         ReportStatus @default(PENDING)
+  
+  // File details
+  filePath       String?
+  fileSize       Int?
+  downloadCount  Int          @default(0)
+  
+  // Audit fields
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  generatedAt    DateTime?
+  expiresAt      DateTime?
+  
+  user           User?        @relation(fields: [userId], references: [id])
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  @@map("reports")
+}
+
+enum ReportType {
+  COMPETITIVE_ANALYSIS
+  MARKET_TRENDS
+  PERFORMANCE_COMPARISON
+  SENTIMENT_ANALYSIS
+  OPPORTUNITY_ANALYSIS
+  CUSTOM
+}
+
+enum ReportStatus {
+  PENDING
+  GENERATING
+  COMPLETED
+  FAILED
+  EXPIRED
+}
+
+model DataSource {
+  id          String           @id @default(cuid())
+  name        String
+  type        DataSourceType
+  url         String?
+  apiKey      String?
+  isActive    Boolean          @default(true)
+  rateLimit   Int?
+  lastUsed    DateTime?
+  errorCount  Int              @default(0)
+  
+  // Configuration
+  config      Json?
+  
+  // Audit fields
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  
+  @@map("data_sources")
+}
+
+enum DataSourceType {
+  WEBSITE
+  TWITTER_API
+  LINKEDIN_API
+  FACEBOOK_API
+  INSTAGRAM_API
+  GOOGLE_ANALYTICS
+  SEMRUSH_API
+  AHREFS_API
+  SIMILARWEB_API
+  NEWS_API
+  RSS_FEED
+}
+
+model JobQueue {
+  id          String     @id @default(cuid())
+  jobType     JobType
+  payload     Json
+  status      JobStatus  @default(PENDING)
+  priority    Int        @default(0)
+  attempts    Int        @default(0)
+  maxAttempts Int        @default(3)
+  
+  // Timing
+  scheduledAt DateTime?
+  startedAt   DateTime?
+  completedAt DateTime?
+  failedAt    DateTime?
+  
+  // Error handling
+  errorMessage String?
+  errorStack   String?
+  
+  // Audit fields
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  
+  @@index([status, priority, scheduledAt])
+  @@map("job_queue")
+}
+
+enum JobType {
+  SCRAPE_WEBSITE
+  ANALYZE_CONTENT
+  GENERATE_INSIGHTS
+  SEND_ALERTS
+  GENERATE_REPORT
+  UPDATE_METRICS
+  SOCIAL_MONITORING
+}
+
+enum JobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  RETRYING
+  CANCELLED
+}
