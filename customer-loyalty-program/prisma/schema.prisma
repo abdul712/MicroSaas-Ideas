@@ -1,0 +1,408 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User model for both business owners and customers
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  image         String?
+  password      String?
+  role          UserRole  @default(CUSTOMER)
+  emailVerified DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // NextAuth.js relations
+  accounts Account[]
+  sessions Session[]
+
+  // Business owner relations
+  businesses Business[]
+
+  // Customer relations
+  memberships LoyaltyMembership[]
+  transactions PointTransaction[]
+  redemptions RewardRedemption[]
+  activities CustomerActivity[]
+  achievements CustomerAchievement[]
+
+  @@map("users")
+}
+
+enum UserRole {
+  CUSTOMER
+  BUSINESS_OWNER
+  ADMIN
+}
+
+// NextAuth.js models
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verificationtokens")
+}
+
+// Business and loyalty program models
+model Business {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  logo        String?
+  website     String?
+  industry    String?
+  ownerId     String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  owner User @relation(fields: [ownerId], references: [id])
+
+  programs LoyaltyProgram[]
+  memberships LoyaltyMembership[]
+
+  @@map("businesses")
+}
+
+model LoyaltyProgram {
+  id              String            @id @default(cuid())
+  name            String
+  description     String?
+  type            LoyaltyProgramType @default(POINTS)
+  isActive        Boolean           @default(true)
+  businessId      String
+  settings        Json              @default("{}")
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id])
+
+  tiers         Tier[]
+  earningRules  EarningRule[]
+  rewards       Reward[]
+  memberships   LoyaltyMembership[]
+  transactions  PointTransaction[]
+  redemptions   RewardRedemption[]
+  campaigns     Campaign[]
+
+  @@map("loyalty_programs")
+}
+
+enum LoyaltyProgramType {
+  POINTS
+  CASHBACK
+  TIER_BASED
+  STAMP_CARD
+}
+
+model Tier {
+  id              String   @id @default(cuid())
+  name            String
+  description     String?
+  minPoints       Int
+  color           String   @default("#6B7280")
+  benefits        Json     @default("[]")
+  multiplier      Float    @default(1.0)
+  loyaltyProgramId String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  loyaltyProgram LoyaltyProgram @relation(fields: [loyaltyProgramId], references: [id])
+  memberships    LoyaltyMembership[]
+
+  @@map("tiers")
+}
+
+model EarningRule {
+  id               String           @id @default(cuid())
+  name             String
+  description      String?
+  type             EarningRuleType
+  triggerCondition Json             @default("{}")
+  pointsAwarded    Int
+  multiplier       Float            @default(1.0)
+  isActive         Boolean          @default(true)
+  validFrom        DateTime?
+  validUntil       DateTime?
+  loyaltyProgramId String
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  loyaltyProgram LoyaltyProgram @relation(fields: [loyaltyProgramId], references: [id])
+
+  @@map("earning_rules")
+}
+
+enum EarningRuleType {
+  PURCHASE
+  SIGNUP
+  REVIEW
+  REFERRAL
+  SOCIAL_SHARE
+  LOGIN_STREAK
+  MILESTONE
+  BIRTHDAY
+  CUSTOM
+}
+
+model Reward {
+  id               String      @id @default(cuid())
+  name             String
+  description      String?
+  type             RewardType
+  pointsCost       Int
+  value            Float?
+  category         String?
+  imageUrl         String?
+  isActive         Boolean     @default(true)
+  stock            Int?
+  redemptionLimit  Int?
+  validFrom        DateTime?
+  validUntil       DateTime?
+  metadata         Json        @default("{}")
+  loyaltyProgramId String
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  loyaltyProgram LoyaltyProgram @relation(fields: [loyaltyProgramId], references: [id])
+  redemptions    RewardRedemption[]
+
+  @@map("rewards")
+}
+
+enum RewardType {
+  DISCOUNT_PERCENTAGE
+  DISCOUNT_FIXED
+  FREE_PRODUCT
+  FREE_SHIPPING
+  GIFT_CARD
+  EXPERIENCE
+  PHYSICAL_ITEM
+  DIGITAL_ITEM
+}
+
+model LoyaltyMembership {
+  id               String   @id @default(cuid())
+  userId           String
+  businessId       String
+  loyaltyProgramId String
+  tierId           String?
+  totalPoints      Int      @default(0)
+  availablePoints  Int      @default(0)
+  lifetimeSpent    Float    @default(0)
+  totalEarned      Int      @default(0)
+  totalRedeemed    Int      @default(0)
+  joinedAt         DateTime @default(now())
+  lastActivityAt   DateTime @default(now())
+  isActive         Boolean  @default(true)
+  metadata         Json     @default("{}")
+
+  user           User           @relation(fields: [userId], references: [id])
+  business       Business       @relation(fields: [businessId], references: [id])
+  loyaltyProgram LoyaltyProgram @relation(fields: [loyaltyProgramId], references: [id])
+  tier           Tier?          @relation(fields: [tierId], references: [id])
+
+  transactions PointTransaction[]
+  redemptions  RewardRedemption[]
+  activities   CustomerActivity[]
+
+  @@unique([userId, businessId, loyaltyProgramId])
+  @@map("loyalty_memberships")
+}
+
+model PointTransaction {
+  id               String              @id @default(cuid())
+  userId           String
+  membershipId     String
+  loyaltyProgramId String
+  type             PointTransactionType
+  points           Int
+  description      String?
+  referenceId      String?
+  metadata         Json                @default("{}")
+  createdAt        DateTime            @default(now())
+
+  user           User              @relation(fields: [userId], references: [id])
+  membership     LoyaltyMembership @relation(fields: [membershipId], references: [id])
+  loyaltyProgram LoyaltyProgram    @relation(fields: [loyaltyProgramId], references: [id])
+
+  @@map("point_transactions")
+}
+
+enum PointTransactionType {
+  EARNED
+  REDEEMED
+  EXPIRED
+  ADJUSTED
+  BONUS
+  REFUND
+}
+
+model RewardRedemption {
+  id               String            @id @default(cuid())
+  userId           String
+  membershipId     String
+  rewardId         String
+  loyaltyProgramId String
+  pointsUsed       Int
+  status           RedemptionStatus  @default(PENDING)
+  redemptionCode   String?
+  redeemedAt       DateTime          @default(now())
+  fulfilledAt      DateTime?
+  metadata         Json              @default("{}")
+
+  user           User              @relation(fields: [userId], references: [id])
+  membership     LoyaltyMembership @relation(fields: [membershipId], references: [id])
+  reward         Reward            @relation(fields: [rewardId], references: [id])
+  loyaltyProgram LoyaltyProgram    @relation(fields: [loyaltyProgramId], references: [id])
+
+  @@map("reward_redemptions")
+}
+
+enum RedemptionStatus {
+  PENDING
+  APPROVED
+  FULFILLED
+  CANCELLED
+  EXPIRED
+}
+
+model CustomerActivity {
+  id           String             @id @default(cuid())
+  userId       String
+  membershipId String
+  type         CustomerActivityType
+  description  String
+  points       Int?
+  metadata     Json               @default("{}")
+  createdAt    DateTime           @default(now())
+
+  user       User              @relation(fields: [userId], references: [id])
+  membership LoyaltyMembership @relation(fields: [membershipId], references: [id])
+
+  @@map("customer_activities")
+}
+
+enum CustomerActivityType {
+  POINTS_EARNED
+  POINTS_REDEEMED
+  TIER_UPGRADED
+  REWARD_CLAIMED
+  MILESTONE_REACHED
+  BADGE_EARNED
+  STREAK_ACHIEVED
+  PURCHASE_MADE
+  REVIEW_SUBMITTED
+  REFERRAL_MADE
+}
+
+model Achievement {
+  id          String   @id @default(cuid())
+  name        String
+  description String
+  type        String
+  icon        String?
+  color       String   @default("#6B7280")
+  points      Int      @default(0)
+  conditions  Json     @default("{}")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  customerAchievements CustomerAchievement[]
+
+  @@map("achievements")
+}
+
+model CustomerAchievement {
+  id            String   @id @default(cuid())
+  userId        String
+  achievementId String
+  earnedAt      DateTime @default(now())
+  metadata      Json     @default("{}")
+
+  user        User        @relation(fields: [userId], references: [id])
+  achievement Achievement @relation(fields: [achievementId], references: [id])
+
+  @@unique([userId, achievementId])
+  @@map("customer_achievements")
+}
+
+model Campaign {
+  id               String         @id @default(cuid())
+  name             String
+  description      String?
+  type             CampaignType
+  status           CampaignStatus @default(DRAFT)
+  startDate        DateTime
+  endDate          DateTime
+  targetAudience   Json           @default("{}")
+  rules            Json           @default("{}")
+  rewards          Json           @default("{}")
+  loyaltyProgramId String
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  loyaltyProgram LoyaltyProgram @relation(fields: [loyaltyProgramId], references: [id])
+
+  @@map("campaigns")
+}
+
+enum CampaignType {
+  BONUS_POINTS
+  DOUBLE_POINTS
+  TIER_CHALLENGE
+  REFERRAL_BONUS
+  BIRTHDAY_SPECIAL
+  SEASONAL
+  MILESTONE
+}
+
+enum CampaignStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  COMPLETED
+  CANCELLED
+}
