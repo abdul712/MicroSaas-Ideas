@@ -1,0 +1,121 @@
+version: '3.8'
+
+services:
+  # Frontend (Next.js)
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - NEXTAUTH_URL=http://localhost:3000
+      - NEXTAUTH_SECRET=your-secret-key
+      - DATABASE_URL=postgresql://postgres:password@db:5432/email_analytics
+      - REDIS_URL=redis://redis:6379
+      - API_BASE_URL=http://api:8000
+    depends_on:
+      - db
+      - redis
+      - api
+    volumes:
+      - .:/app
+      - /app/node_modules
+    command: npm run dev
+
+  # Backend API (FastAPI)
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:password@db:5432/email_analytics
+      - REDIS_URL=redis://redis:6379
+      - CLICKHOUSE_URL=http://clickhouse:8123
+      - ENVIRONMENT=development
+    depends_on:
+      - db
+      - redis
+      - clickhouse
+    volumes:
+      - ./api:/app
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  # PostgreSQL Database
+  db:
+    image: postgres:15-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=email_analytics
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  # Redis for caching and sessions
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  # ClickHouse for time-series analytics
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    environment:
+      - CLICKHOUSE_DB=analytics
+      - CLICKHOUSE_USER=default
+      - CLICKHOUSE_PASSWORD=
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./clickhouse/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  # Celery Worker for background tasks
+  worker:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL=postgresql://postgres:password@db:5432/email_analytics
+      - REDIS_URL=redis://redis:6379
+      - CLICKHOUSE_URL=http://clickhouse:8123
+      - ENVIRONMENT=development
+    depends_on:
+      - db
+      - redis
+      - clickhouse
+    volumes:
+      - ./api:/app
+    command: celery -A worker.celery worker --loglevel=info
+
+  # Celery Beat for scheduled tasks
+  scheduler:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL=postgresql://postgres:password@db:5432/email_analytics
+      - REDIS_URL=redis://redis:6379
+      - CLICKHOUSE_URL=http://clickhouse:8123
+      - ENVIRONMENT=development
+    depends_on:
+      - db
+      - redis
+      - worker
+    volumes:
+      - ./api:/app
+    command: celery -A worker.celery beat --loglevel=info
+
+volumes:
+  postgres_data:
+  redis_data:
+  clickhouse_data:
