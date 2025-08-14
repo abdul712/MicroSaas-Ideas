@@ -1,0 +1,11 @@
+// Environment variables for testing
+process.env.NODE_ENV = 'test'
+process.env.NEXTAUTH_SECRET = 'test-secret'
+process.env.NEXTAUTH_URL = 'http://localhost:3000'
+process.env.JWT_SECRET = 'test-jwt-secret'
+process.env.DATABASE_URL = 'postgresql://test:test@localhost:5432/expense_tracker_test'
+process.env.ENCRYPTION_KEY = 'test-encryption-key-32-characters'
+process.env.RATE_LIMIT_WINDOW_MS = '900000'
+process.env.RATE_LIMIT_MAX_REQUESTS = '100'
+process.env.MAX_FILE_SIZE = '10485760'
+process.env.ALLOWED_FILE_TYPES = 'image/jpeg,image/png,image/webp,application/pdf'

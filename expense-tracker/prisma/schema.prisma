@@ -1,0 +1,404 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider          = "postgresql"
+  url               = env("DATABASE_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+}
+
+// Enums
+enum Role {
+  USER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum SubscriptionTier {
+  FREE
+  PERSONAL
+  PROFESSIONAL
+  BUSINESS
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELED
+  PAST_DUE
+  INCOMPLETE
+  TRIALING
+}
+
+enum ExpenseStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  REIMBURSED
+}
+
+enum ReceiptStatus {
+  PROCESSING
+  COMPLETED
+  FAILED
+  MANUAL_REVIEW
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  EXPORT
+  IMPORT
+}
+
+enum CurrencyCode {
+  USD
+  EUR
+  GBP
+  CAD
+  AUD
+  JPY
+  CHF
+  CNY
+  INR
+}
+
+// Multi-tenant Organization model
+model Organization {
+  id                String              @id @default(cuid())
+  name              String
+  slug              String              @unique
+  domain            String?             @unique
+  logo              String?
+  settings          Json?               @default("{}")
+  subscriptionTier  SubscriptionTier    @default(FREE)
+  subscriptionStatus SubscriptionStatus @default(ACTIVE)
+  stripeCustomerId  String?             @unique
+  stripeSubscriptionId String?          @unique
+  billingEmail      String?
+  maxUsers          Int                 @default(5)
+  maxExpensesPerMonth Int               @default(20)
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  
+  // Relationships
+  users             User[]
+  expenses          Expense[]
+  categories        Category[]
+  projects          Project[]
+  receipts          Receipt[]
+  reports           Report[]
+  budgets           Budget[]
+  auditLogs         AuditLog[]
+  
+  @@map("organizations")
+}
+
+// User model with multi-tenant support
+model User {
+  id                String              @id @default(cuid())
+  email             String              @unique
+  emailVerified     DateTime?
+  firstName         String?
+  lastName          String?
+  avatar            String?
+  role              Role                @default(USER)
+  isActive          Boolean             @default(true)
+  lastLoginAt       DateTime?
+  preferences       Json?               @default("{}")
+  
+  // MFA fields
+  mfaEnabled        Boolean             @default(false)
+  mfaSecret         String?
+  mfaBackupCodes    String[]
+  
+  // Organization relationship
+  organizationId    String
+  organization      Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  // Password and authentication
+  hashedPassword    String?
+  resetToken        String?
+  resetTokenExpiry  DateTime?
+  verificationToken String?
+  
+  // Timestamps
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  
+  // Relationships
+  expenses          Expense[]
+  receipts          Receipt[]
+  reports           Report[]
+  auditLogs         AuditLog[]
+  sessions          Session[]
+  
+  @@unique([email, organizationId])
+  @@map("users")
+}
+
+// NextAuth session model
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("sessions")
+}
+
+// Expense categories with hierarchical structure
+model Category {
+  id              String       @id @default(cuid())
+  name            String
+  description     String?
+  color           String?
+  icon            String?
+  taxDeductible   Boolean      @default(false)
+  isDefault       Boolean      @default(false)
+  isActive        Boolean      @default(true)
+  parentId        String?
+  parent          Category?    @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children        Category[]   @relation("CategoryHierarchy")
+  
+  // Multi-tenant
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  
+  // Relationships
+  expenses        Expense[]
+  budgets         Budget[]
+  
+  @@unique([name, organizationId])
+  @@map("categories")
+}
+
+// Projects for expense allocation
+model Project {
+  id             String       @id @default(cuid())
+  name           String
+  description    String?
+  clientName     String?
+  budget         Decimal?     @db.Decimal(12, 2)
+  isActive       Boolean      @default(true)
+  startDate      DateTime?
+  endDate        DateTime?
+  
+  // Multi-tenant
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  
+  // Relationships
+  expenses       Expense[]
+  
+  @@map("projects")
+}
+
+// Budget management
+model Budget {
+  id               String       @id @default(cuid())
+  name             String
+  amount           Decimal      @db.Decimal(12, 2)
+  spent            Decimal      @default(0) @db.Decimal(12, 2)
+  currency         CurrencyCode @default(USD)
+  period           String       // "monthly", "quarterly", "yearly", "custom"
+  startDate        DateTime
+  endDate          DateTime
+  alertThreshold   Int?         @default(80) // Percentage
+  isActive         Boolean      @default(true)
+  
+  // Multi-tenant
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  // Category relationship (optional)
+  categoryId       String?
+  category         Category?    @relation(fields: [categoryId], references: [id])
+  
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  
+  @@map("budgets")
+}
+
+// Main expense model
+model Expense {
+  id                String           @id @default(cuid())
+  amount            Decimal          @db.Decimal(12, 2)
+  currency          CurrencyCode     @default(USD)
+  exchangeRate      Decimal?         @default(1) @db.Decimal(8, 4)
+  amountInBaseCurrency Decimal?      @db.Decimal(12, 2)
+  description       String
+  merchantName      String?
+  expenseDate       DateTime
+  status            ExpenseStatus    @default(DRAFT)
+  notes             String?
+  tags              String[]
+  isRecurring       Boolean          @default(false)
+  recurringPattern  Json?            // Stores recurrence rules
+  
+  // Location data
+  location          String?
+  coordinates       Json?            // {lat, lng}
+  
+  // Mileage tracking
+  mileage           Decimal?         @db.Decimal(8, 2)
+  mileageRate       Decimal?         @db.Decimal(6, 4)
+  
+  // Relationships
+  organizationId    String
+  organization      Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  userId            String
+  user              User             @relation(fields: [userId], references: [id])
+  
+  categoryId        String?
+  category          Category?        @relation(fields: [categoryId], references: [id])
+  
+  projectId         String?
+  project           Project?         @relation(fields: [projectId], references: [id])
+  
+  receipts          Receipt[]
+  
+  // Timestamps
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  
+  @@map("expenses")
+}
+
+// Receipt processing with OCR
+model Receipt {
+  id                String         @id @default(cuid())
+  filename          String
+  originalFilename  String
+  fileSize          Int
+  mimeType          String
+  fileUrl           String
+  thumbnailUrl      String?
+  
+  // OCR Processing
+  ocrStatus         ReceiptStatus  @default(PROCESSING)
+  ocrData           Json?          // Raw OCR extracted data
+  extractedAmount   Decimal?       @db.Decimal(12, 2)
+  extractedDate     DateTime?
+  extractedMerchant String?
+  extractedTax      Decimal?       @db.Decimal(12, 2)
+  confidence        Decimal?       @db.Decimal(5, 4) // OCR confidence score
+  
+  // Processing metadata
+  processedAt       DateTime?
+  processingTime    Int?           // Processing time in milliseconds
+  
+  // Relationships
+  organizationId    String
+  organization      Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  userId            String
+  user              User           @relation(fields: [userId], references: [id])
+  
+  expenseId         String?
+  expense           Expense?       @relation(fields: [expenseId], references: [id], onDelete: SetNull)
+  
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  
+  @@map("receipts")
+}
+
+// Report generation and management
+model Report {
+  id               String       @id @default(cuid())
+  name             String
+  type             String       // "expense", "tax", "project", "category"
+  parameters       Json         // Report filters and settings
+  generatedData    Json?        // Cached report data
+  fileUrl          String?      // Generated file URL (PDF, CSV)
+  status           String       @default("pending") // "pending", "generated", "failed"
+  
+  // Date range
+  startDate        DateTime
+  endDate          DateTime
+  
+  // Multi-tenant
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  // User who generated the report
+  userId           String
+  user             User         @relation(fields: [userId], references: [id])
+  
+  generatedAt      DateTime?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  
+  @@map("reports")
+}
+
+// Audit logging for compliance
+model AuditLog {
+  id               String       @id @default(cuid())
+  action           AuditAction
+  resource         String       // Table/model name
+  resourceId       String?      // ID of the affected resource
+  oldValues        Json?        // Previous values
+  newValues        Json?        // New values
+  ipAddress        String?
+  userAgent        String?
+  
+  // Multi-tenant
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  // User who performed the action
+  userId           String?
+  user             User?        @relation(fields: [userId], references: [id])
+  
+  createdAt        DateTime     @default(now())
+  
+  @@map("audit_logs")
+}
+
+// Indexes for performance
+// User indexes
+@@index([User.organizationId])
+@@index([User.email])
+@@index([User.role])
+
+// Expense indexes
+@@index([Expense.organizationId])
+@@index([Expense.userId])
+@@index([Expense.expenseDate])
+@@index([Expense.categoryId])
+@@index([Expense.status])
+@@index([Expense.projectId])
+
+// Receipt indexes
+@@index([Receipt.organizationId])
+@@index([Receipt.userId])
+@@index([Receipt.expenseId])
+@@index([Receipt.ocrStatus])
+
+// Category indexes
+@@index([Category.organizationId])
+@@index([Category.parentId])
+
+// Audit log indexes
+@@index([AuditLog.organizationId])
+@@index([AuditLog.userId])
+@@index([AuditLog.createdAt])
+@@index([AuditLog.action])
