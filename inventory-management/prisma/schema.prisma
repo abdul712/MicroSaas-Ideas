@@ -1,0 +1,293 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               String    @id @default(cuid())
+  email            String    @unique
+  businessName     String
+  subscriptionTier String    @default("free")
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  locations      Location[]
+  products       Product[]
+  suppliers      Supplier[]
+  salesChannels  SalesChannel[]
+  userSessions   UserSession[]
+  inventoryLogs  InventoryLog[]
+
+  @@map("users")
+}
+
+model UserSession {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_sessions")
+}
+
+model Location {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  address   String?
+  isPrimary Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  inventory      Inventory[]
+  stockMovements StockMovement[]
+  transfersFrom  StockTransfer[]  @relation("TransferFrom")
+  transfersTo    StockTransfer[]  @relation("TransferTo")
+
+  @@map("locations")
+}
+
+model Category {
+  id          String    @id @default(cuid())
+  name        String
+  description String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  products Product[]
+
+  @@map("categories")
+}
+
+model Product {
+  id           String   @id @default(cuid())
+  userId       String
+  categoryId   String?
+  name         String
+  sku          String   @unique
+  barcode      String?  @unique
+  description  String?
+  reorderPoint Int      @default(10)
+  cost         Decimal  @default(0)
+  price        Decimal  @default(0)
+  weight       Decimal? 
+  dimensions   String?
+  imageUrl     String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category        Category?        @relation(fields: [categoryId], references: [id])
+  variants        ProductVariant[]
+  inventory       Inventory[]
+  stockMovements  StockMovement[]
+  purchaseItems   PurchaseOrderItem[]
+  lowStockAlerts  LowStockAlert[]
+
+  @@map("products")
+}
+
+model ProductVariant {
+  id         String   @id @default(cuid())
+  productId  String
+  name       String
+  sku        String   @unique
+  barcode    String?  @unique
+  attributes Json     // Store variant attributes as JSON
+  cost       Decimal  @default(0)
+  price      Decimal  @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  product        Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  inventory      Inventory[]
+  stockMovements StockMovement[]
+
+  @@map("product_variants")
+}
+
+model Inventory {
+  id              String   @id @default(cuid())
+  productId       String
+  productVariantId String?
+  locationId      String
+  quantity        Int      @default(0)
+  reservedQuantity Int     @default(0)
+  cost            Decimal  @default(0)
+  lastStockTake   DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  product        Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productVariant ProductVariant? @relation(fields: [productVariantId], references: [id])
+  location       Location        @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, productVariantId, locationId])
+  @@map("inventory")
+}
+
+model StockMovement {
+  id              String   @id @default(cuid())
+  productId       String
+  productVariantId String?
+  locationId      String
+  type            String   // IN, OUT, ADJUSTMENT, TRANSFER
+  quantity        Int
+  cost            Decimal  @default(0)
+  reference       String?  // Order ID, Transfer ID, etc.
+  notes           String?
+  createdAt       DateTime @default(now())
+
+  product        Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productVariant ProductVariant? @relation(fields: [productVariantId], references: [id])
+  location       Location        @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@map("stock_movements")
+}
+
+model StockTransfer {
+  id               String   @id @default(cuid())
+  fromLocationId   String
+  toLocationId     String
+  status           String   @default("pending") // pending, in_transit, completed, cancelled
+  notes            String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  fromLocation Location              @relation("TransferFrom", fields: [fromLocationId], references: [id])
+  toLocation   Location              @relation("TransferTo", fields: [toLocationId], references: [id])
+  items        StockTransferItem[]
+
+  @@map("stock_transfers")
+}
+
+model StockTransferItem {
+  id              String @id @default(cuid())
+  transferId      String
+  productId       String
+  productVariantId String?
+  quantity        Int
+  
+  transfer       StockTransfer   @relation(fields: [transferId], references: [id], onDelete: Cascade)
+
+  @@map("stock_transfer_items")
+}
+
+model Supplier {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  email       String?
+  phone       String?
+  address     String?
+  contactPerson String?
+  leadTimeDays  Int     @default(7)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  purchaseOrders PurchaseOrder[]
+
+  @@map("suppliers")
+}
+
+model PurchaseOrder {
+  id           String   @id @default(cuid())
+  supplierId   String
+  orderNumber  String   @unique
+  status       String   @default("pending") // pending, ordered, received, cancelled
+  totalAmount  Decimal  @default(0)
+  expectedDate DateTime?
+  receivedDate DateTime?
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  supplier Supplier            @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  items    PurchaseOrderItem[]
+
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderItem {
+  id              String  @id @default(cuid())
+  purchaseOrderId String
+  productId       String
+  quantity        Int
+  unitCost        Decimal
+  receivedQuantity Int    @default(0)
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  product       Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@map("purchase_order_items")
+}
+
+model SalesChannel {
+  id             String   @id @default(cuid())
+  userId         String
+  platform       String   // shopify, woocommerce, square, etc.
+  name           String
+  storeUrl       String?
+  apiCredentials Json     // Encrypted API credentials
+  isActive       Boolean  @default(true)
+  lastSyncAt     DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  syncLogs SyncLog[]
+
+  @@map("sales_channels")
+}
+
+model SyncLog {
+  id            String   @id @default(cuid())
+  channelId     String
+  status        String   // success, error, partial
+  itemsSynced   Int      @default(0)
+  errorMessage  String?
+  startedAt     DateTime @default(now())
+  completedAt   DateTime?
+
+  channel SalesChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@map("sync_logs")
+}
+
+model LowStockAlert {
+  id        String   @id @default(cuid())
+  productId String
+  threshold Int
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@map("low_stock_alerts")
+}
+
+model InventoryLog {
+  id        String   @id @default(cuid())
+  userId    String
+  action    String   // create, update, delete, etc.
+  entity    String   // product, inventory, etc.
+  entityId  String
+  changes   Json     // Store the changes made
+  timestamp DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("inventory_logs")
+}
