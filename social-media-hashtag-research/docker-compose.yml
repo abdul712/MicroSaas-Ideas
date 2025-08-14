@@ -1,0 +1,122 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: hashtag_research
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Application
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      # Database
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/hashtag_research?schema=public
+      
+      # Redis
+      REDIS_URL: redis://redis:6379
+      
+      # NextAuth
+      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_SECRET: your-super-secret-jwt-secret-change-in-production
+      
+      # OAuth Providers (add your own)
+      GOOGLE_CLIENT_ID: your-google-client-id
+      GOOGLE_CLIENT_SECRET: your-google-client-secret
+      GITHUB_CLIENT_ID: your-github-client-id
+      GITHUB_CLIENT_SECRET: your-github-client-secret
+      
+      # OpenAI (for AI features)
+      OPENAI_API_KEY: your-openai-api-key
+      
+      # Stripe (for payments)
+      STRIPE_PUBLISHABLE_KEY: your-stripe-publishable-key
+      STRIPE_SECRET_KEY: your-stripe-secret-key
+      STRIPE_WEBHOOK_SECRET: your-stripe-webhook-secret
+      
+      # Other
+      NODE_ENV: production
+      
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Development database (for local development)
+  postgres-dev:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: hashtag_research_dev
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    profiles:
+      - dev
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Adminer (Database management tool)
+  adminer:
+    image: adminer
+    ports:
+      - "8080:8080"
+    profiles:
+      - dev
+    depends_on:
+      - postgres
+      - postgres-dev
+
+  # Mailhog (Email testing)
+  mailhog:
+    image: mailhog/mailhog
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    profiles:
+      - dev
+
+volumes:
+  postgres_data:
+  postgres_dev_data:
+  redis_data:
