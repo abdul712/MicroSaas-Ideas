@@ -1,0 +1,56 @@
+{
+  "name": "@heatmap-analytics/monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Enterprise-grade Website Heatmap Tool - Complete Analytics Platform",
+  "workspaces": [
+    "frontend",
+    "backend/*",
+    "sdk",
+    "infrastructure"
+  ],
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "type-check": "turbo run type-check",
+    "clean": "turbo run clean",
+    "docker:build": "docker-compose build",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "k8s:deploy": "kubectl apply -f infrastructure/k8s/",
+    "setup:dev": "npm install && docker-compose up -d postgres redis clickhouse kafka"
+  },
+  "devDependencies": {
+    "turbo": "^1.13.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.45.0",
+    "eslint-config-prettier": "^8.8.0",
+    "husky": "^8.0.3",
+    "lint-staged": "^13.2.3",
+    "prettier": "^3.0.0",
+    "typescript": "^5.1.6"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/abdul712/MicroSaas-Ideas"
+  },
+  "keywords": [
+    "heatmap",
+    "analytics",
+    "user-behavior",
+    "session-replay",
+    "conversion-optimization",
+    "a11y",
+    "gdpr",
+    "real-time"
+  ],
+  "author": "Abdul Rahim <abdul712@users.noreply.github.com>",
+  "license": "MIT"
+}
