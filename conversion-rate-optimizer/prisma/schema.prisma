@@ -1,0 +1,461 @@
+// Conversion Rate Optimizer Database Schema
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  password  String
+  role      UserRole @default(USER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Multi-tenancy
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  // User preferences
+  timezone     String @default("UTC")
+  notifications Boolean @default(true)
+
+  // Relationships
+  projects      Project[]
+  tests         Test[]
+  sessions      UserSession[]
+
+  @@map("users")
+}
+
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String
+  domain    String?  @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Subscription info
+  plan          SubscriptionPlan @default(STARTER)
+  monthlyVisitors Int @default(0)
+  status        TenantStatus @default(ACTIVE)
+  
+  // Relationships
+  users         User[]
+  projects      Project[]
+  subscriptions Subscription[]
+
+  @@map("tenants")
+}
+
+model Subscription {
+  id       String @id @default(cuid())
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  stripeCustomerId     String?
+  stripeSubscriptionId String?
+  stripePriceId        String?
+  
+  plan     SubscriptionPlan
+  status   SubscriptionStatus
+  currentPeriodEnd DateTime?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("subscriptions")
+}
+
+model Project {
+  id        String   @id @default(cuid())
+  name      String
+  domain    String
+  industry  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Multi-tenancy
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User   @relation(fields: [userId], references: [id])
+
+  // Project settings
+  trackingId       String   @unique @default(cuid())
+  monthlyTraffic   Int?
+  primaryGoal      String?
+  timezone         String   @default("UTC")
+  isActive         Boolean  @default(true)
+
+  // Analytics settings
+  excludeInternalTraffic Boolean @default(true)
+  cookieConsent         Boolean @default(true)
+  gdprCompliant         Boolean @default(true)
+
+  // Relationships
+  funnels         Funnel[]
+  tests           Test[]
+  conversionEvents ConversionEvent[]
+  bottlenecks     Bottleneck[]
+  insights        Insight[]
+  recommendations Recommendation[]
+
+  @@map("projects")
+}
+
+model Funnel {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  name      String
+  steps     Json // Array of funnel steps with URLs and conversion goals
+  goalType  GoalType
+  goalValue Decimal?
+  isActive  Boolean  @default(true)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relationships
+  bottlenecks Bottleneck[]
+  analytics   FunnelAnalytics[]
+
+  @@map("funnels")
+}
+
+model ConversionEvent {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  sessionId       String
+  eventType       String
+  pageUrl         String
+  elementSelector String?
+  timestamp       DateTime
+  properties      Json?
+  
+  // User identification (privacy-compliant)
+  anonymousId String
+  
+  // Device and browser info
+  userAgent String?
+  ipAddress String?
+  country   String?
+  device    String?
+  browser   String?
+  
+  createdAt DateTime @default(now())
+
+  @@index([projectId, timestamp])
+  @@index([sessionId])
+  @@map("conversion_events")
+}
+
+model Bottleneck {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  funnelId  String?
+  funnel    Funnel?  @relation(fields: [funnelId], references: [id])
+
+  type        BottleneckType
+  severity    Severity
+  title       String
+  description String
+  impactScore Decimal
+  detectedAt  DateTime
+  status      BottleneckStatus @default(ACTIVE)
+  
+  // Location details
+  pageUrl         String
+  elementSelector String?
+  
+  // Analytics data
+  dropOffRate     Decimal?
+  affectedUsers   Int?
+  revenueImpact   Decimal?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("bottlenecks")
+}
+
+model Test {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+
+  name       String
+  hypothesis String
+  type       TestType
+  status     TestStatus     @default(DRAFT)
+  
+  // Test configuration
+  targetUrl       String
+  trafficAllocation Json // Percentage split for each variation
+  targetingRules    Json? // Audience targeting rules
+  
+  // Statistical configuration
+  confidenceLevel   Int @default(95)
+  minimumSampleSize Int @default(1000)
+  expectedLift      Decimal?
+  
+  // Test timeline
+  startedAt DateTime?
+  endedAt   DateTime?
+  duration  Int? // Duration in days
+  
+  // Results
+  statisticalSignificance Decimal?
+  winnerVariationId      String?
+  isImplemented          Boolean @default(false)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relationships
+  variations TestVariation[]
+  results    TestResult[]
+
+  @@map("tests")
+}
+
+model TestVariation {
+  id     String @id @default(cuid())
+  testId String
+  test   Test   @relation(fields: [testId], references: [id], onDelete: Cascade)
+
+  name              String
+  changes           Json // DOM modifications and changes
+  trafficPercentage Int
+  
+  // Performance metrics
+  conversions    Int     @default(0)
+  visitors       Int     @default(0)
+  conversionRate Decimal @default(0)
+  isWinner       Boolean @default(false)
+  isControl      Boolean @default(false)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("test_variations")
+}
+
+model TestResult {
+  id     String @id @default(cuid())
+  testId String
+  test   Test   @relation(fields: [testId], references: [id], onDelete: Cascade)
+
+  variationId String
+  metric      String // 'conversions', 'revenue', 'engagement'
+  value       Decimal
+  confidence  Decimal?
+  
+  recordedAt DateTime @default(now())
+
+  @@map("test_results")
+}
+
+model Insight {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  type           InsightType
+  title          String
+  description    String
+  potentialImpact Decimal // Percentage improvement potential
+  priority       Int
+  status         InsightStatus @default(PENDING)
+  
+  // Implementation
+  actionItems Json?
+  estimatedEffort String?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("insights")
+}
+
+model Recommendation {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  category    RecommendationCategory
+  title       String
+  description String
+  reasoning   String
+  
+  // Implementation details
+  difficulty      Difficulty
+  estimatedImpact Decimal
+  implementation  Json // Step-by-step implementation
+  
+  // AI-generated content
+  aiGenerated Boolean @default(true)
+  confidence  Decimal // AI confidence score
+  
+  status    RecommendationStatus @default(PENDING)
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+
+  @@map("recommendations")
+}
+
+model FunnelAnalytics {
+  id       String @id @default(cuid())
+  funnelId String
+  funnel   Funnel @relation(fields: [funnelId], references: [id], onDelete: Cascade)
+
+  date        DateTime
+  step        Int
+  visitors    Int
+  conversions Int
+  dropOff     Int
+  
+  // Performance metrics
+  conversionRate Decimal
+  dropOffRate    Decimal
+  
+  createdAt DateTime @default(now())
+
+  @@unique([funnelId, date, step])
+  @@map("funnel_analytics")
+}
+
+model UserSession {
+  id       String @id @default(cuid())
+  userId   String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  sessionToken String   @unique
+  expires      DateTime
+  createdAt    DateTime @default(now())
+
+  @@map("user_sessions")
+}
+
+// Enums
+enum UserRole {
+  USER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum SubscriptionPlan {
+  STARTER
+  GROWTH
+  SCALE
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELED
+  PAST_DUE
+  UNPAID
+}
+
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+  CANCELED
+}
+
+enum GoalType {
+  PAGE_VIEW
+  CLICK
+  PURCHASE
+  SIGNUP
+  LEAD
+  CUSTOM
+}
+
+enum BottleneckType {
+  FORM
+  PAGE
+  ELEMENT
+  TECHNICAL
+  CHECKOUT
+  NAVIGATION
+}
+
+enum Severity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum BottleneckStatus {
+  ACTIVE
+  RESOLVED
+  IGNORED
+}
+
+enum TestType {
+  AB
+  MULTIVARIATE
+  REDIRECT
+  SPLIT_URL
+}
+
+enum TestStatus {
+  DRAFT
+  RUNNING
+  PAUSED
+  COMPLETED
+  ARCHIVED
+}
+
+enum InsightType {
+  RECOMMENDATION
+  ALERT
+  OPPORTUNITY
+  WARNING
+}
+
+enum InsightStatus {
+  PENDING
+  REVIEWED
+  IMPLEMENTED
+  DISMISSED
+}
+
+enum RecommendationCategory {
+  UX_DESIGN
+  CONTENT
+  TECHNICAL
+  MOBILE
+  CHECKOUT
+  FORMS
+  NAVIGATION
+  PERFORMANCE
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum RecommendationStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  DISMISSED
+}
