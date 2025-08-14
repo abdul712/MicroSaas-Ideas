@@ -1,0 +1,385 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Organizations (Multi-tenant support)
+model Organization {
+  id            String   @id @default(cuid())
+  name          String
+  slug          String   @unique
+  industry      String?
+  timezone      String   @default("UTC")
+  planType      PlanType @default(STARTER)
+  subscriptionStatus String @default("trial")
+  trialEndsAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  // Relationships
+  users         User[]
+  customers     Customer[]
+  segments      Segment[]
+  campaigns     Campaign[]
+  integrations  Integration[]
+  events        Event[]
+  predictions   Prediction[]
+  
+  // Billing
+  stripeCustomerId     String?
+  stripeSubscriptionId String?
+  
+  // Settings
+  settings      Json     @default("{}")
+  
+  @@map("organizations")
+}
+
+// Users (Team members)
+model User {
+  id            String   @id @default(cuid())
+  name          String?
+  email         String   @unique
+  emailVerified DateTime?
+  image         String?
+  role          UserRole @default(MEMBER)
+  organizationId String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  // Relationships
+  organization  Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  accounts      Account[]
+  sessions      Session[]
+  
+  // Activity tracking
+  lastLoginAt   DateTime?
+  isActive      Boolean  @default(true)
+  
+  @@map("users")
+}
+
+// NextAuth Account model
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+// NextAuth Session model
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("sessions")
+}
+
+// Customers (End customers being segmented)
+model Customer {
+  id             String   @id @default(cuid())
+  organizationId String
+  externalId     String   // ID from source system (Shopify, etc.)
+  email          String?
+  firstName      String?
+  lastName       String?
+  phone          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  // Customer attributes (flexible JSON)
+  attributes     Json     @default("{}")
+  
+  // Computed metrics
+  totalSpent     Float    @default(0)
+  orderCount     Int      @default(0)
+  avgOrderValue  Float    @default(0)
+  lastOrderAt    DateTime?
+  firstOrderAt   DateTime?
+  
+  // RFM Scores (1-5)
+  recencyScore   Int?
+  frequencyScore Int?
+  monetaryScore  Int?
+  rfmSegment     String?
+  
+  // ML Predictions
+  churnProbability      Float?
+  lifetimeValuePrediction Float?
+  nextPurchasePrediction DateTime?
+  
+  // Status
+  isActive       Boolean  @default(true)
+  
+  // Relationships
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  events         Event[]
+  segmentMemberships SegmentMembership[]
+  predictions    Prediction[]
+  
+  @@unique([organizationId, externalId])
+  @@index([organizationId, email])
+  @@index([organizationId, totalSpent])
+  @@index([organizationId, lastOrderAt])
+  @@map("customers")
+}
+
+// Events (Customer actions/behaviors)
+model Event {
+  id             String   @id @default(cuid())
+  organizationId String
+  customerId     String
+  eventType      String   // purchase, page_view, email_open, etc.
+  properties     Json     @default("{}")
+  timestamp      DateTime @default(now())
+  source         String?  // shopify, website, email, etc.
+  
+  // Event value (for revenue tracking)
+  value          Float?
+  currency       String?
+  
+  // Relationships
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer       Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  
+  @@index([organizationId, eventType])
+  @@index([organizationId, customerId])
+  @@index([organizationId, timestamp])
+  @@map("events")
+}
+
+// Segments (Customer groups)
+model Segment {
+  id             String      @id @default(cuid())
+  organizationId String
+  name           String
+  description    String?
+  type           SegmentType @default(MANUAL)
+  
+  // Segment rules/criteria (JSON)
+  rules          Json        @default("{}")
+  
+  // ML Model info (for ML segments)
+  mlModelType    String?     // kmeans, dbscan, rfm, etc.
+  mlModelParams  Json        @default("{}")
+  
+  // Segment stats
+  customerCount  Int         @default(0)
+  totalValue     Float       @default(0)
+  avgOrderValue  Float       @default(0)
+  
+  // Status
+  isActive       Boolean     @default(true)
+  lastUpdatedAt  DateTime    @default(now())
+  
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  
+  // Relationships
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  memberships    SegmentMembership[]
+  campaigns      Campaign[]
+  
+  @@index([organizationId, type])
+  @@map("segments")
+}
+
+// Segment memberships (Many-to-many between customers and segments)
+model SegmentMembership {
+  id             String   @id @default(cuid())
+  customerId     String
+  segmentId      String
+  joinedAt       DateTime @default(now())
+  confidenceScore Float?  // For ML segments
+  
+  // Relationships
+  customer       Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  segment        Segment  @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+  
+  @@unique([customerId, segmentId])
+  @@map("segment_memberships")
+}
+
+// ML Predictions
+model Prediction {
+  id             String         @id @default(cuid())
+  organizationId String
+  customerId     String
+  predictionType PredictionType
+  value          Float
+  confidence     Float
+  predictedAt    DateTime       @default(now())
+  validUntil     DateTime?
+  
+  // Model info
+  modelVersion   String?
+  modelParams    Json           @default("{}")
+  
+  // Relationships
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer       Customer       @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  
+  @@index([organizationId, predictionType])
+  @@index([organizationId, customerId])
+  @@map("predictions")
+}
+
+// Marketing campaigns
+model Campaign {
+  id             String         @id @default(cuid())
+  organizationId String
+  segmentId      String?
+  name           String
+  type           CampaignType
+  status         CampaignStatus @default(DRAFT)
+  
+  // Campaign settings
+  settings       Json           @default("{}")
+  
+  // Performance metrics
+  sentCount      Int            @default(0)
+  openCount      Int            @default(0)
+  clickCount     Int            @default(0)
+  conversionCount Int           @default(0)
+  revenue        Float          @default(0)
+  
+  // Scheduling
+  scheduledAt    DateTime?
+  sentAt         DateTime?
+  
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  
+  // Relationships
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  segment        Segment?       @relation(fields: [segmentId], references: [id])
+  
+  @@map("campaigns")
+}
+
+// Integrations (Connected platforms)
+model Integration {
+  id             String           @id @default(cuid())
+  organizationId String
+  platform       IntegrationType
+  name           String
+  status         IntegrationStatus @default(PENDING)
+  
+  // Integration settings and credentials (encrypted)
+  settings       Json             @default("{}")
+  
+  // Sync status
+  lastSyncAt     DateTime?
+  nextSyncAt     DateTime?
+  syncStatus     String?
+  
+  // Stats
+  recordsSynced  Int              @default(0)
+  errorCount     Int              @default(0)
+  
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  
+  // Relationships
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  @@unique([organizationId, platform])
+  @@map("integrations")
+}
+
+// Enums
+enum UserRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+enum PlanType {
+  STARTER
+  PROFESSIONAL
+  ENTERPRISE
+  CUSTOM
+}
+
+enum SegmentType {
+  MANUAL
+  BEHAVIORAL
+  RFM
+  ML_CLUSTERING
+  PREDICTIVE
+}
+
+enum PredictionType {
+  CHURN_PROBABILITY
+  LIFETIME_VALUE
+  NEXT_PURCHASE_DATE
+  PURCHASE_PROBABILITY
+  CATEGORY_PREFERENCE
+}
+
+enum CampaignType {
+  EMAIL
+  SMS
+  PUSH
+  WEBHOOK
+  EXPORT
+}
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  RUNNING
+  COMPLETED
+  PAUSED
+  FAILED
+}
+
+enum IntegrationType {
+  SHOPIFY
+  WOOCOMMERCE
+  MAGENTO
+  STRIPE
+  PAYPAL
+  MAILCHIMP
+  KLAVIYO
+  HUBSPOT
+  SALESFORCE
+  GOOGLE_ANALYTICS
+  MIXPANEL
+  ZENDESK
+  INTERCOM
+  FACEBOOK_ADS
+  GOOGLE_ADS
+}
+
+enum IntegrationStatus {
+  PENDING
+  CONNECTED
+  ERROR
+  DISABLED
+}
