@@ -1,0 +1,309 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  password      String?
+  role          UserRole  @default(EMPLOYEE)
+  
+  // Employee specific fields
+  employeeId    String?   @unique
+  phone         String?
+  address       String?
+  hourlyRate    Decimal?  @db.Decimal(10, 2)
+  maxHoursPerWeek Int?    @default(40)
+  skills        String[]
+  isActive      Boolean   @default(true)
+  hireDate      DateTime?
+  emergencyContact String?
+  
+  // Relations
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  accounts       Account[]
+  sessions       Session[]
+  
+  // Scheduling relations
+  schedules         Schedule[]
+  availabilities    Availability[]
+  timeOffRequests   TimeOffRequest[]
+  shiftSwapsRequested ShiftSwap[] @relation("RequestingUser")
+  shiftSwapsOriginal ShiftSwap[] @relation("OriginalUser")
+  notifications     Notification[]
+  clockIns         ClockIn[]
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Organization {
+  id          String   @id @default(cuid())
+  name        String
+  industry    String?
+  timezone    String   @default("UTC")
+  address     String?
+  phone       String?
+  settings    Json?    // JSON for flexible settings
+  
+  // Subscription info
+  subscriptionTier String @default("FREE") // FREE, SMALL, GROWING, ENTERPRISE
+  maxEmployees     Int    @default(5)
+  
+  // Relations
+  users        User[]
+  locations    Location[]
+  shifts       Shift[]
+  laborRules   LaborRule[]
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Location {
+  id            String   @id @default(cuid())
+  name          String
+  address       String?
+  phone         String?
+  operatingHours Json?   // JSON for flexible hours
+  
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  shifts        Shift[]
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Shift {
+  id           String   @id @default(cuid())
+  title        String?
+  startTime    DateTime
+  endTime      DateTime
+  roleRequired String?  // Job role needed for this shift
+  minStaff     Int      @default(1)
+  maxStaff     Int      @default(1)
+  description  String?
+  isRecurring  Boolean  @default(false)
+  recurringPattern Json? // Pattern for recurring shifts
+  color        String?  // For calendar display
+  
+  locationId     String
+  location       Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  schedules    Schedule[]
+  shiftSwaps   ShiftSwap[]
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Schedule {
+  id        String        @id @default(cuid())
+  status    ScheduleStatus @default(DRAFT)
+  publishedAt DateTime?
+  
+  shiftId   String
+  shift     Shift @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  
+  userId    String?
+  user      User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@unique([shiftId, userId])
+}
+
+model Availability {
+  id          String   @id @default(cuid())
+  dayOfWeek   Int      // 0 = Sunday, 1 = Monday, etc.
+  startTime   String   // HH:MM format
+  endTime     String   // HH:MM format
+  isRecurring Boolean  @default(true)
+  
+  // For specific date availability
+  specificDate DateTime?
+  
+  userId      String
+  user        User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model TimeOffRequest {
+  id         String            @id @default(cuid())
+  startDate  DateTime
+  endDate    DateTime
+  reason     String?
+  status     TimeOffStatus     @default(PENDING)
+  notes      String?
+  approvedBy String?
+  approvedAt DateTime?
+  
+  userId     String
+  user       User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ShiftSwap {
+  id           String         @id @default(cuid())
+  status       ShiftSwapStatus @default(PENDING)
+  message      String?
+  approvedBy   String?
+  approvedAt   DateTime?
+  
+  originalUserId    String
+  originalUser      User @relation("OriginalUser", fields: [originalUserId], references: [id], onDelete: Cascade)
+  
+  requestingUserId  String
+  requestingUser    User @relation("RequestingUser", fields: [requestingUserId], references: [id], onDelete: Cascade)
+  
+  shiftId      String
+  shift        Shift @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model LaborRule {
+  id         String   @id @default(cuid())
+  ruleType   LaborRuleType
+  parameters Json     // Flexible JSON for rule parameters
+  isActive   Boolean  @default(true)
+  
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Notification {
+  id       String           @id @default(cuid())
+  type     NotificationType
+  title    String
+  message  String
+  readAt   DateTime?
+  
+  userId   String
+  user     User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ClockIn {
+  id        String    @id @default(cuid())
+  clockIn   DateTime
+  clockOut  DateTime?
+  location  String?   // GPS location or location name
+  notes     String?
+  
+  userId    String
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Enums
+enum UserRole {
+  ADMIN
+  MANAGER
+  EMPLOYEE
+}
+
+enum ScheduleStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum TimeOffStatus {
+  PENDING
+  APPROVED
+  DENIED
+}
+
+enum ShiftSwapStatus {
+  PENDING
+  APPROVED
+  DENIED
+  CANCELLED
+}
+
+enum LaborRuleType {
+  MAX_HOURS_PER_DAY
+  MAX_HOURS_PER_WEEK
+  MIN_REST_BETWEEN_SHIFTS
+  OVERTIME_THRESHOLD
+  BREAK_REQUIREMENTS
+  MINOR_RESTRICTIONS
+}
+
+enum NotificationType {
+  SHIFT_ASSIGNED
+  SHIFT_CHANGED
+  SHIFT_CANCELLED
+  SHIFT_REMINDER
+  SWAP_REQUEST
+  SWAP_APPROVED
+  SWAP_DENIED
+  TIME_OFF_APPROVED
+  TIME_OFF_DENIED
+  SCHEDULE_PUBLISHED
+}
