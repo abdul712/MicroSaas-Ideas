@@ -1,0 +1,190 @@
+# ExpenseTracker Pro - Docker Compose Configuration
+# Complete development and production environment setup
+
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: expensetracker-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DATABASE_NAME:-expensetracker}
+      POSTGRES_USER: ${DATABASE_USER:-postgres}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-password123}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    ports:
+      - "${DATABASE_PORT:-5432}:5432"
+    networks:
+      - expensetracker-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER:-postgres} -d ${DATABASE_NAME:-expensetracker}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # Redis for caching and sessions
+  redis:
+    image: redis:7-alpine
+    container_name: expensetracker-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redispass123}
+    volumes:
+      - redis_data:/data
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    networks:
+      - expensetracker-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  # Main Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    container_name: expensetracker-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # Database
+      DATABASE_URL: postgresql://${DATABASE_USER:-postgres}:${DATABASE_PASSWORD:-password123}@postgres:5432/${DATABASE_NAME:-expensetracker}
+      
+      # Redis
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redispass123}@redis:6379
+      
+      # NextAuth.js
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-your-secret-key-here}
+      
+      # OAuth Providers
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      
+      # File Storage (AWS S3 or compatible)
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET:-expensetracker-receipts}
+      
+      # OCR Services
+      GOOGLE_CLOUD_PROJECT_ID: ${GOOGLE_CLOUD_PROJECT_ID}
+      GOOGLE_CLOUD_KEY_FILE: ${GOOGLE_CLOUD_KEY_FILE}
+      
+      # Email (SendGrid)
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY}
+      SENDGRID_FROM_EMAIL: ${SENDGRID_FROM_EMAIL:-noreply@expensetracker.pro}
+      
+      # Stripe Payments
+      STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+      
+      # Application Settings
+      NODE_ENV: ${NODE_ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      
+      # Security
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-your-encryption-key-32-chars}
+      
+      # Monitoring
+      SENTRY_DSN: ${SENTRY_DSN}
+      
+    volumes:
+      - app_uploads:/app/uploads
+      - app_logs:/app/logs
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    networks:
+      - expensetracker-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Nginx Reverse Proxy (for production)
+  nginx:
+    image: nginx:alpine
+    container_name: expensetracker-nginx
+    restart: unless-stopped
+    depends_on:
+      - app
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - app_uploads:/var/www/uploads:ro
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      - expensetracker-network
+    profiles:
+      - production
+
+  # Background Job Worker
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    container_name: expensetracker-worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # Same environment as main app
+      DATABASE_URL: postgresql://${DATABASE_USER:-postgres}:${DATABASE_PASSWORD:-password123}@postgres:5432/${DATABASE_NAME:-expensetracker}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redispass123}@redis:6379
+      NODE_ENV: ${NODE_ENV:-production}
+      WORKER_MODE: "true"
+    command: ["node", "scripts/worker.js"]
+    volumes:
+      - app_uploads:/app/uploads
+      - app_logs:/app/logs
+    networks:
+      - expensetracker-network
+    profiles:
+      - production
+
+# Volumes for data persistence
+volumes:
+  postgres_data:
+    name: expensetracker_postgres_data
+  redis_data:
+    name: expensetracker_redis_data
+  app_uploads:
+    name: expensetracker_uploads
+  app_logs:
+    name: expensetracker_logs
+
+# Network for service communication
+networks:
+  expensetracker-network:
+    name: expensetracker_network
+    driver: bridge
+
+# Health check configuration
+x-healthcheck-defaults: &healthcheck-defaults
+  interval: 30s
+  timeout: 10s
+  retries: 3
+  start_period: 60s

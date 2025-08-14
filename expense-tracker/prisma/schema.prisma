@@ -1,0 +1,506 @@
+// Expense Tracker - Multi-tenant Database Schema
+// Enterprise-grade financial data management with security and compliance
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User Management and Authentication
+model User {
+  id                String    @id @default(cuid())
+  email             String    @unique
+  emailVerified     DateTime?
+  name              String?
+  image             String?
+  hashedPassword    String?
+  phone             String?
+  role              UserRole  @default(USER)
+  isActive          Boolean   @default(true)
+  lastLoginAt       DateTime?
+  mfaEnabled        Boolean   @default(false)
+  mfaSecret         String?
+  
+  // Multi-tenancy
+  organizationId    String?
+  organization      Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  // Timestamps
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  // Relations
+  accounts          Account[]
+  sessions          Session[]
+  expenses          Expense[]
+  receipts          Receipt[]
+  reports           Report[]
+  categories        Category[]
+  projects          Project[]
+  budgets           Budget[]
+  auditLogs         AuditLog[]
+  
+  @@map("users")
+}
+
+// Organization for multi-tenancy
+model Organization {
+  id                String    @id @default(cuid())
+  name              String
+  slug              String    @unique
+  domain            String?
+  industry          String?
+  size              OrganizationSize?
+  timezone          String    @default("UTC")
+  currency          String    @default("USD")
+  
+  // Subscription
+  subscriptionTier  SubscriptionTier @default(FREE)
+  subscriptionId    String?
+  customerId        String?
+  
+  // Settings
+  settings          Json      @default("{}")
+  
+  // Timestamps
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  // Relations
+  users             User[]
+  expenses          Expense[]
+  receipts          Receipt[]
+  categories        Category[]
+  projects          Project[]
+  budgets           Budget[]
+  reports           Report[]
+  auditLogs         AuditLog[]
+  
+  @@map("organizations")
+}
+
+// NextAuth.js required models
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// Core Expense Management
+model Expense {
+  id                String      @id @default(cuid())
+  amount            Decimal     @db.Decimal(10, 2)
+  currency          String      @default("USD")
+  exchangeRate      Decimal?    @db.Decimal(10, 4)
+  description       String
+  merchantName      String?
+  merchantCategory  String?
+  
+  // Categorization
+  categoryId        String
+  category          Category    @relation(fields: [categoryId], references: [id])
+  subcategory       String?
+  tags              String[]    @default([])
+  
+  // Tax and Business
+  isTaxDeductible   Boolean     @default(false)
+  taxCategory       String?
+  businessPurpose   String?
+  attendees         String[]    @default([])
+  
+  // Project tracking
+  projectId         String?
+  project           Project?    @relation(fields: [projectId], references: [id])
+  
+  // Location and Date
+  expenseDate       DateTime
+  location          String?
+  latitude          Decimal?    @db.Decimal(10, 8)
+  longitude         Decimal?    @db.Decimal(11, 8)
+  
+  // Payment method
+  paymentMethod     PaymentMethod @default(CASH)
+  cardLast4         String?
+  
+  // Status and Processing
+  status            ExpenseStatus @default(PENDING)
+  isRecurring       Boolean     @default(false)
+  recurringPattern  String?
+  
+  // Mileage (for travel expenses)
+  startLocation     String?
+  endLocation       String?
+  distance          Decimal?    @db.Decimal(8, 2)
+  mileageRate       Decimal?    @db.Decimal(4, 2)
+  
+  // Multi-tenancy
+  userId            String
+  user              User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId    String?
+  organization      Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  // Timestamps
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  
+  // Relations
+  receipts          Receipt[]
+  auditLogs         AuditLog[]
+  
+  @@index([userId, expenseDate])
+  @@index([organizationId, expenseDate])
+  @@index([categoryId])
+  @@index([status])
+  @@map("expenses")
+}
+
+// Receipt Management with OCR
+model Receipt {
+  id                String      @id @default(cuid())
+  filename          String
+  originalName      String
+  mimeType          String
+  fileSize          Int
+  url               String
+  thumbnailUrl      String?
+  
+  // OCR Processing
+  ocrStatus         OCRStatus   @default(PENDING)
+  ocrProvider       String?
+  ocrData           Json?
+  ocrConfidence     Decimal?    @db.Decimal(3, 2)
+  ocrProcessedAt    DateTime?
+  
+  // Extracted Data
+  extractedAmount   Decimal?    @db.Decimal(10, 2)
+  extractedDate     DateTime?
+  extractedMerchant String?
+  extractedItems    Json?
+  
+  // Validation
+  isValidated       Boolean     @default(false)
+  validatedBy       String?
+  validatedAt       DateTime?
+  
+  // Relations
+  expenseId         String?
+  expense           Expense?    @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  userId            String
+  user              User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId    String?
+  organization      Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  // Timestamps
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  
+  @@index([userId])
+  @@index([ocrStatus])
+  @@index([isValidated])
+  @@map("receipts")
+}
+
+// Category Management
+model Category {
+  id                String      @id @default(cuid())
+  name              String
+  description       String?
+  icon              String?
+  color             String?
+  
+  // Tax properties
+  isTaxDeductible   Boolean     @default(false)
+  taxCode           String?
+  
+  // Hierarchy
+  parentId          String?
+  parent            Category?   @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children          Category[]  @relation("CategoryHierarchy")
+  
+  // Visibility
+  isSystemCategory  Boolean     @default(false)
+  isActive          Boolean     @default(true)
+  
+  // Multi-tenancy
+  userId            String?
+  user              User?       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId    String?
+  organization      Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  // Timestamps
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  
+  // Relations
+  expenses          Expense[]
+  budgets           Budget[]
+  
+  @@unique([name, organizationId])
+  @@index([userId])
+  @@index([isSystemCategory])
+  @@map("categories")
+}
+
+// Project/Client Tracking
+model Project {
+  id                String      @id @default(cuid())
+  name              String
+  description       String?
+  clientName        String?
+  clientEmail       String?
+  
+  // Budget and tracking
+  budget            Decimal?    @db.Decimal(10, 2)
+  budgetCurrency    String      @default("USD")
+  
+  // Status
+  status            ProjectStatus @default(ACTIVE)
+  startDate         DateTime?
+  endDate           DateTime?
+  
+  // Multi-tenancy
+  userId            String
+  user              User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId    String?
+  organization      Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  // Timestamps
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  
+  // Relations
+  expenses          Expense[]
+  
+  @@index([userId])
+  @@index([status])
+  @@map("projects")
+}
+
+// Budget Management
+model Budget {
+  id                String      @id @default(cuid())
+  name              String
+  amount            Decimal     @db.Decimal(10, 2)
+  currency          String      @default("USD")
+  
+  // Period
+  period            BudgetPeriod @default(MONTHLY)
+  startDate         DateTime
+  endDate           DateTime
+  
+  // Category association
+  categoryId        String?
+  category          Category?   @relation(fields: [categoryId], references: [id])
+  
+  // Alerts
+  alertThreshold    Decimal?    @db.Decimal(3, 2) // Percentage (0.80 = 80%)
+  emailAlerts       Boolean     @default(true)
+  
+  // Multi-tenancy
+  userId            String
+  user              User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId    String?
+  organization      Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  // Timestamps
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  
+  @@index([userId])
+  @@index([period, startDate, endDate])
+  @@map("budgets")
+}
+
+// Report Generation
+model Report {
+  id                String      @id @default(cuid())
+  name              String
+  description       String?
+  type              ReportType  @default(EXPENSE_SUMMARY)
+  
+  // Period
+  startDate         DateTime
+  endDate           DateTime
+  
+  // Filters
+  filters           Json        @default("{}")
+  
+  // Output
+  format            ReportFormat @default(PDF)
+  fileUrl           String?
+  fileSize          Int?
+  
+  // Status
+  status            ReportStatus @default(PENDING)
+  generatedAt       DateTime?
+  
+  // Multi-tenancy
+  userId            String
+  user              User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId    String?
+  organization      Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  // Timestamps
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  
+  @@index([userId])
+  @@index([status])
+  @@map("reports")
+}
+
+// Security and Audit Logging
+model AuditLog {
+  id                String      @id @default(cuid())
+  action            String      // CREATE, UPDATE, DELETE, LOGIN, LOGOUT, etc.
+  entityType        String      // User, Expense, Receipt, etc.
+  entityId          String?
+  oldValues         Json?
+  newValues         Json?
+  ipAddress         String?
+  userAgent         String?
+  
+  // User context
+  userId            String?
+  user              User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  organizationId    String?
+  organization      Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  // Expense context (for expense-related actions)
+  expenseId         String?
+  expense           Expense?    @relation(fields: [expenseId], references: [id], onDelete: SetNull)
+  
+  // Timestamp
+  createdAt         DateTime    @default(now())
+  
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// Enums
+enum UserRole {
+  USER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum OrganizationSize {
+  SOLO
+  SMALL
+  MEDIUM
+  LARGE
+  ENTERPRISE
+}
+
+enum SubscriptionTier {
+  FREE
+  PERSONAL
+  PROFESSIONAL
+  BUSINESS
+  ENTERPRISE
+}
+
+enum ExpenseStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  REIMBURSED
+}
+
+enum PaymentMethod {
+  CASH
+  CREDIT_CARD
+  DEBIT_CARD
+  BANK_TRANSFER
+  CHECK
+  DIGITAL_WALLET
+  OTHER
+}
+
+enum OCRStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  MANUAL_REVIEW
+}
+
+enum ProjectStatus {
+  ACTIVE
+  INACTIVE
+  COMPLETED
+  ARCHIVED
+}
+
+enum BudgetPeriod {
+  DAILY
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  YEARLY
+  CUSTOM
+}
+
+enum ReportType {
+  EXPENSE_SUMMARY
+  TAX_REPORT
+  PROJECT_EXPENSES
+  CATEGORY_BREAKDOWN
+  MILEAGE_REPORT
+  RECEIPT_ARCHIVE
+  BUDGET_ANALYSIS
+  CUSTOM
+}
+
+enum ReportFormat {
+  PDF
+  CSV
+  EXCEL
+  JSON
+}
+
+enum ReportStatus {
+  PENDING
+  GENERATING
+  COMPLETED
+  FAILED
+}
