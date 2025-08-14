@@ -1,0 +1,171 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222.2 84% 4.9%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96%;
+    --accent-foreground: 222.2 84% 4.9%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 221.2 83.2% 53.3%;
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 84% 4.9%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 224.3 76.3% 94.1%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Custom scrollbar */
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted)) transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--muted));
+    border-radius: 3px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(var(--muted-foreground));
+  }
+}
+
+/* Loading animations */
+@keyframes pulse-subtle {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.animate-pulse-subtle {
+  animation: pulse-subtle 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Survey builder specific styles */
+.survey-builder {
+  @apply min-h-screen bg-gray-50;
+}
+
+.question-item {
+  @apply border border-gray-200 rounded-lg bg-white shadow-sm;
+  transition: all 0.2s ease-in-out;
+}
+
+.question-item:hover {
+  @apply shadow-md border-gray-300;
+}
+
+.question-item.selected {
+  @apply border-blue-500 shadow-md ring-1 ring-blue-500;
+}
+
+.drag-handle {
+  @apply cursor-grab text-gray-400 hover:text-gray-600;
+}
+
+.drag-handle:active {
+  @apply cursor-grabbing;
+}
+
+/* Widget preview styles */
+.widget-preview {
+  @apply relative overflow-hidden rounded-lg border shadow-sm;
+}
+
+.widget-popup {
+  @apply fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50;
+}
+
+.widget-slide-in {
+  @apply fixed bottom-4 right-4 z-50 max-w-sm;
+}
+
+.widget-embedded {
+  @apply w-full rounded-lg border;
+}
+
+/* Form field states */
+.form-field-error {
+  @apply border-red-500 ring-1 ring-red-500;
+}
+
+.form-field-success {
+  @apply border-green-500 ring-1 ring-green-500;
+}
+
+/* Analytics chart colors */
+.chart-primary {
+  color: hsl(var(--primary));
+}
+
+.chart-secondary {
+  color: hsl(var(--secondary));
+}
+
+.chart-success {
+  color: hsl(142.1 76.2% 36.3%);
+}
+
+.chart-warning {
+  color: hsl(47.9 95.8% 53.1%);
+}
+
+.chart-error {
+  color: hsl(0 84.2% 60.2%);
+}
