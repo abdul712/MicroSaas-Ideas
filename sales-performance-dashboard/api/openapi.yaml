@@ -1,0 +1,1146 @@
+openapi: 3.0.3
+info:
+  title: Sales Performance Dashboard API
+  description: |
+    Enterprise-grade Sales Analytics and Business Intelligence API
+    
+    ## Features
+    - Real-time sales metrics and KPI tracking
+    - AI-powered forecasting and insights
+    - Multi-source CRM integration
+    - Interactive dashboard management
+    - Team performance analytics
+    
+    ## Authentication
+    This API uses JWT Bearer tokens for authentication. Include the token in the Authorization header:
+    ```
+    Authorization: Bearer <your-jwt-token>
+    ```
+    
+    ## Rate Limiting
+    API calls are limited to 100 requests per minute per user.
+    
+    ## Multi-tenancy
+    All data is automatically scoped to the authenticated user's organization.
+  version: 1.0.0
+  contact:
+    name: Sales Dashboard API Support
+    email: support@salesdashboard.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: https://api.salesdashboard.com/v1
+    description: Production server
+  - url: https://staging-api.salesdashboard.com/v1
+    description: Staging server
+  - url: http://localhost:8080/v1
+    description: Development server
+
+security:
+  - BearerAuth: []
+
+paths:
+  # Authentication Endpoints
+  /auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: User login
+      description: Authenticate user with email and password
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  minLength: 8
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                  refresh_token:
+                    type: string
+                  expires_in:
+                    type: integer
+                  user:
+                    $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/oauth/{provider}:
+    get:
+      tags:
+        - Authentication
+      summary: OAuth login
+      description: Initiate OAuth flow with supported provider
+      security: []
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [google, microsoft, salesforce]
+      responses:
+        '302':
+          description: Redirect to OAuth provider
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /auth/refresh:
+    post:
+      tags:
+        - Authentication
+      summary: Refresh access token
+      description: Get new access token using refresh token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - refresh_token
+              properties:
+                refresh_token:
+                  type: string
+      responses:
+        '200':
+          description: Token refreshed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                  expires_in:
+                    type: integer
+
+  # Analytics Endpoints
+  /analytics/metrics:
+    get:
+      tags:
+        - Analytics
+      summary: Get sales metrics
+      description: Retrieve sales metrics with filtering and aggregation
+      parameters:
+        - name: metric_types
+          in: query
+          description: Comma-separated list of metric types
+          schema:
+            type: string
+            example: "revenue,deals_count,pipeline_value"
+        - name: start_date
+          in: query
+          description: Start date for metrics (ISO 8601)
+          schema:
+            type: string
+            format: date-time
+        - name: end_date
+          in: query
+          description: End date for metrics (ISO 8601)
+          schema:
+            type: string
+            format: date-time
+        - name: granularity
+          in: query
+          description: Time granularity for aggregation
+          schema:
+            type: string
+            enum: [hour, day, week, month, quarter, year]
+            default: day
+        - name: dimensions
+          in: query
+          description: Group by dimensions (JSON object)
+          schema:
+            type: string
+            example: '{"team_id": "123", "user_id": "456"}'
+        - name: limit
+          in: query
+          description: Maximum number of results
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 100
+      responses:
+        '200':
+          description: Metrics retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SalesMetric'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+                  aggregations:
+                    type: object
+                    properties:
+                      total_revenue:
+                        type: number
+                      total_deals:
+                        type: integer
+                      avg_deal_size:
+                        type: number
+
+    post:
+      tags:
+        - Analytics
+      summary: Add sales metric
+      description: Add a new sales metric data point
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSalesMetric'
+      responses:
+        '201':
+          description: Metric created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SalesMetric'
+
+  /analytics/kpis:
+    get:
+      tags:
+        - Analytics
+      summary: Get KPI summary
+      description: Get calculated KPIs and performance indicators
+      parameters:
+        - name: period
+          in: query
+          description: Time period for KPI calculation
+          schema:
+            type: string
+            enum: [today, week, month, quarter, year]
+            default: month
+        - name: compare_previous
+          in: query
+          description: Include comparison with previous period
+          schema:
+            type: boolean
+            default: true
+      responses:
+        '200':
+          description: KPIs retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  current_period:
+                    $ref: '#/components/schemas/KPISummary'
+                  previous_period:
+                    $ref: '#/components/schemas/KPISummary'
+                  growth_rates:
+                    type: object
+                    additionalProperties:
+                      type: number
+
+  /analytics/forecasts:
+    get:
+      tags:
+        - Analytics
+      summary: Get sales forecasts
+      description: Retrieve AI-generated sales forecasts
+      parameters:
+        - name: forecast_type
+          in: query
+          description: Type of forecast to retrieve
+          schema:
+            type: string
+            enum: [revenue, deals, pipeline]
+            default: revenue
+        - name: time_period
+          in: query
+          description: Forecast time period
+          schema:
+            type: string
+            enum: [monthly, quarterly, yearly]
+            default: monthly
+        - name: horizon_months
+          in: query
+          description: Number of months to forecast ahead
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 24
+            default: 12
+      responses:
+        '200':
+          description: Forecasts retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  forecasts:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Forecast'
+                  model_info:
+                    type: object
+                    properties:
+                      accuracy:
+                        type: number
+                      last_trained:
+                        type: string
+                        format: date-time
+                      model_version:
+                        type: string
+
+    post:
+      tags:
+        - Analytics
+      summary: Generate new forecast
+      description: Trigger forecast generation with custom parameters
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - forecast_type
+                - time_period
+              properties:
+                forecast_type:
+                  type: string
+                  enum: [revenue, deals, pipeline]
+                time_period:
+                  type: string
+                  enum: [monthly, quarterly, yearly]
+                horizon_months:
+                  type: integer
+                  minimum: 1
+                  maximum: 24
+                include_seasonality:
+                  type: boolean
+                  default: true
+                include_holidays:
+                  type: boolean
+                  default: true
+      responses:
+        '202':
+          description: Forecast generation started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+                    enum: [pending, running, completed, failed]
+
+  # Dashboard Endpoints
+  /dashboards:
+    get:
+      tags:
+        - Dashboards
+      summary: List dashboards
+      description: Get list of dashboards accessible to the user
+      parameters:
+        - name: is_public
+          in: query
+          description: Filter by public/private dashboards
+          schema:
+            type: boolean
+        - name: tags
+          in: query
+          description: Filter by tags (comma-separated)
+          schema:
+            type: string
+        - name: search
+          in: query
+          description: Search dashboard names and descriptions
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Dashboards retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Dashboard'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+
+    post:
+      tags:
+        - Dashboards
+      summary: Create dashboard
+      description: Create a new dashboard
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDashboard'
+      responses:
+        '201':
+          description: Dashboard created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dashboard'
+
+  /dashboards/{dashboard_id}:
+    get:
+      tags:
+        - Dashboards
+      summary: Get dashboard
+      description: Get dashboard details and configuration
+      parameters:
+        - name: dashboard_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Dashboard retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dashboard'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags:
+        - Dashboards
+      summary: Update dashboard
+      description: Update dashboard configuration
+      parameters:
+        - name: dashboard_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateDashboard'
+      responses:
+        '200':
+          description: Dashboard updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dashboard'
+
+    delete:
+      tags:
+        - Dashboards
+      summary: Delete dashboard
+      description: Delete a dashboard
+      parameters:
+        - name: dashboard_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Dashboard deleted successfully
+
+  # Integration Endpoints
+  /integrations:
+    get:
+      tags:
+        - Integrations
+      summary: List integrations
+      description: Get list of configured integrations
+      responses:
+        '200':
+          description: Integrations retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Integration'
+
+    post:
+      tags:
+        - Integrations
+      summary: Create integration
+      description: Create a new CRM/platform integration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateIntegration'
+      responses:
+        '201':
+          description: Integration created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Integration'
+
+  /integrations/{integration_id}:
+    get:
+      tags:
+        - Integrations
+      summary: Get integration
+      description: Get integration details and status
+      parameters:
+        - name: integration_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Integration retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Integration'
+
+    put:
+      tags:
+        - Integrations
+      summary: Update integration
+      description: Update integration configuration
+      parameters:
+        - name: integration_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateIntegration'
+      responses:
+        '200':
+          description: Integration updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Integration'
+
+    delete:
+      tags:
+        - Integrations
+      summary: Delete integration
+      description: Delete an integration
+      parameters:
+        - name: integration_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Integration deleted successfully
+
+  /integrations/{integration_id}/sync:
+    post:
+      tags:
+        - Integrations
+      summary: Trigger sync
+      description: Manually trigger data synchronization
+      parameters:
+        - name: integration_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '202':
+          description: Sync started successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sync_job_id:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+                    enum: [pending, running]
+
+  # Teams Endpoints
+  /teams:
+    get:
+      tags:
+        - Teams
+      summary: List teams
+      description: Get list of sales teams
+      responses:
+        '200':
+          description: Teams retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Team'
+
+    post:
+      tags:
+        - Teams
+      summary: Create team
+      description: Create a new sales team
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTeam'
+      responses:
+        '201':
+          description: Team created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Team'
+
+  /teams/{team_id}/performance:
+    get:
+      tags:
+        - Teams
+      summary: Get team performance
+      description: Get team performance metrics and analytics
+      parameters:
+        - name: team_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: period
+          in: query
+          description: Time period for performance metrics
+          schema:
+            type: string
+            enum: [week, month, quarter, year]
+            default: month
+      responses:
+        '200':
+          description: Team performance retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamPerformance'
+
+  # Real-time Endpoints
+  /realtime/connect:
+    get:
+      tags:
+        - Real-time
+      summary: WebSocket connection
+      description: |
+        Establish WebSocket connection for real-time updates.
+        
+        **WebSocket URL**: `wss://api.salesdashboard.com/v1/realtime/connect`
+        
+        **Authentication**: Include JWT token as query parameter: `?token=<jwt-token>`
+        
+        **Message Format**:
+        ```json
+        {
+          "type": "metric_update",
+          "data": {
+            "metric_type": "revenue",
+            "value": 5000.00,
+            "timestamp": "2024-01-15T10:30:00Z"
+          }
+        }
+        ```
+      responses:
+        '101':
+          description: WebSocket connection established
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        first_name:
+          type: string
+        last_name:
+          type: string
+        role:
+          type: string
+          enum: [admin, manager, analyst, viewer]
+        organization:
+          $ref: '#/components/schemas/Organization'
+        created_at:
+          type: string
+          format: date-time
+
+    Organization:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        domain:
+          type: string
+        subscription_plan:
+          type: string
+          enum: [starter, professional, enterprise]
+        settings:
+          type: object
+
+    SalesMetric:
+      type: object
+      properties:
+        time:
+          type: string
+          format: date-time
+        metric_type:
+          type: string
+          example: revenue
+        value:
+          type: number
+          example: 5000.00
+        currency:
+          type: string
+          example: USD
+        dimensions:
+          type: object
+          additionalProperties: true
+        metadata:
+          type: object
+
+    CreateSalesMetric:
+      type: object
+      required:
+        - metric_type
+        - value
+      properties:
+        metric_type:
+          type: string
+        value:
+          type: number
+        currency:
+          type: string
+          default: USD
+        dimensions:
+          type: object
+          additionalProperties: true
+        metadata:
+          type: object
+
+    KPISummary:
+      type: object
+      properties:
+        total_revenue:
+          type: number
+        total_deals:
+          type: integer
+        avg_deal_size:
+          type: number
+        conversion_rate:
+          type: number
+        pipeline_value:
+          type: number
+        pipeline_velocity:
+          type: number
+        win_rate:
+          type: number
+
+    Forecast:
+      type: object
+      properties:
+        forecast_date:
+          type: string
+          format: date
+        predicted_value:
+          type: number
+        confidence_lower:
+          type: number
+        confidence_upper:
+          type: number
+        actual_value:
+          type: number
+          nullable: true
+
+    Dashboard:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        config:
+          type: object
+          properties:
+            layout:
+              type: string
+              enum: [grid, flow]
+            widgets:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  type:
+                    type: string
+                  position:
+                    type: object
+                  config:
+                    type: object
+        is_public:
+          type: boolean
+        tags:
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateDashboard:
+      type: object
+      required:
+        - name
+        - config
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        config:
+          type: object
+        is_public:
+          type: boolean
+          default: false
+        tags:
+          type: array
+          items:
+            type: string
+
+    UpdateDashboard:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        config:
+          type: object
+        is_public:
+          type: boolean
+        tags:
+          type: array
+          items:
+            type: string
+
+    Integration:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        type:
+          type: string
+          enum: [salesforce, hubspot, pipedrive, stripe, paypal, shopify]
+        status:
+          type: string
+          enum: [active, inactive, error, pending]
+        last_sync_at:
+          type: string
+          format: date-time
+        last_sync_status:
+          type: string
+        sync_stats:
+          type: object
+        created_at:
+          type: string
+          format: date-time
+
+    CreateIntegration:
+      type: object
+      required:
+        - name
+        - type
+        - config
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum: [salesforce, hubspot, pipedrive, stripe, paypal, shopify]
+        config:
+          type: object
+          description: Integration-specific configuration (credentials, settings)
+        sync_frequency:
+          type: string
+          enum: [realtime, hourly, daily]
+          default: hourly
+
+    UpdateIntegration:
+      type: object
+      properties:
+        name:
+          type: string
+        config:
+          type: object
+        sync_frequency:
+          type: string
+          enum: [realtime, hourly, daily]
+
+    Team:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        manager:
+          $ref: '#/components/schemas/User'
+        members:
+          type: array
+          items:
+            $ref: '#/components/schemas/TeamMember'
+        target_revenue:
+          type: number
+        target_period:
+          type: string
+          enum: [monthly, quarterly, yearly]
+
+    CreateTeam:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        manager_id:
+          type: string
+          format: uuid
+        target_revenue:
+          type: number
+        target_period:
+          type: string
+          enum: [monthly, quarterly, yearly]
+
+    TeamMember:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+        role:
+          type: string
+          enum: [manager, member]
+        quota:
+          type: number
+        quota_period:
+          type: string
+          enum: [monthly, quarterly, yearly]
+        joined_at:
+          type: string
+          format: date-time
+
+    TeamPerformance:
+      type: object
+      properties:
+        period:
+          type: object
+          properties:
+            start_date:
+              type: string
+              format: date
+            end_date:
+              type: string
+              format: date
+        metrics:
+          type: object
+          properties:
+            total_revenue:
+              type: number
+            target_revenue:
+              type: number
+            achievement_rate:
+              type: number
+            total_deals:
+              type: integer
+            avg_deal_size:
+              type: number
+        member_performance:
+          type: array
+          items:
+            type: object
+            properties:
+              user:
+                $ref: '#/components/schemas/User'
+              revenue:
+                type: number
+              quota:
+                type: number
+              achievement_rate:
+                type: number
+              deals_count:
+                type: integer
+
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+        per_page:
+          type: integer
+        total:
+          type: integer
+        total_pages:
+          type: integer
+        has_next:
+          type: boolean
+        has_prev:
+          type: boolean
+
+    Error:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: "VALIDATION_ERROR"
+            message: "Invalid request data"
+
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: "UNAUTHORIZED"
+            message: "Invalid or expired token"
+
+    Forbidden:
+      description: Forbidden
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: "FORBIDDEN"
+            message: "Insufficient permissions"
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: "NOT_FOUND"
+            message: "Resource not found"
+
+    RateLimitExceeded:
+      description: Rate limit exceeded
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: "RATE_LIMIT_EXCEEDED"
+            message: "Too many requests"
+
+tags:
+  - name: Authentication
+    description: User authentication and authorization
+  - name: Analytics
+    description: Sales metrics, KPIs, and forecasting
+  - name: Dashboards
+    description: Dashboard management and configuration
+  - name: Integrations
+    description: CRM and platform integrations
+  - name: Teams
+    description: Sales team management and performance
+  - name: Real-time
+    description: WebSocket connections and live updates
