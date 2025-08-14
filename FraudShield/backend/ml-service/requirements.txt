@@ -1,0 +1,152 @@
+# FastAPI and ASGI server
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+
+# Machine Learning Core
+scikit-learn==1.3.2
+xgboost==2.0.2
+lightgbm==4.1.0
+catboost==1.2.2
+
+# Deep Learning (optional, for advanced models)
+torch==2.1.0
+tensorflow==2.14.0
+
+# Data Processing and Analysis
+pandas==2.1.3
+numpy==1.24.4
+scipy==1.11.4
+
+# Feature Engineering
+category-encoders==2.6.3
+feature-engine==1.6.2
+imbalanced-learn==0.11.0
+
+# Model Management and Deployment
+mlflow==2.8.1
+joblib==1.3.2
+pickle5==0.0.12
+
+# Model Explainability
+shap==0.43.0
+lime==0.2.0.1
+
+# Data Validation and Quality
+great-expectations==0.18.5
+evidently==0.4.12
+
+# Database and Storage
+sqlalchemy==2.0.23
+psycopg2-binary==2.9.9
+redis[hiredis]==5.0.1
+
+# Time Series and Analytics
+influxdb-client==1.38.0
+pytz==2023.3
+python-dateutil==2.8.2
+
+# HTTP and API
+httpx==0.25.2
+requests==2.31.0
+aiohttp==3.9.1
+
+# Configuration and Environment
+pydantic==2.5.0
+pydantic-settings==2.1.0
+python-dotenv==1.0.0
+
+# Monitoring and Logging
+prometheus-client==0.19.0
+structlog==23.2.0
+colorlog==6.8.0
+
+# Caching and Performance
+cachetools==5.3.2
+orjson==3.9.10
+
+# Statistical Analysis
+statsmodels==0.14.0
+bayesian-optimization==1.4.3
+
+# Anomaly Detection
+pyod==1.1.3
+isolation-forest==0.0.3
+
+# Geographic and Location
+geoip2==4.7.0
+geopy==2.4.1
+pycountry==22.3.13
+
+# Network Analysis (for fraud rings)
+networkx==3.2.1
+python-igraph==0.10.8
+
+# Text Processing and NLP
+nltk==3.8.1
+spacy==3.7.2
+transformers==4.35.2
+
+# Image Processing (for document verification)
+pillow==10.1.0
+opencv-python-headless==4.8.1.78
+
+# Cryptography and Security
+cryptography==41.0.8
+hashlib-compat==1.0.1
+
+# Utilities
+click==8.1.7
+rich==13.7.0
+tqdm==4.66.1
+
+# Development and Testing
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+pytest-mock==3.12.0
+
+# Data Science and Visualization
+matplotlib==3.8.2
+seaborn==0.13.0
+plotly==5.17.0
+
+# Model Optimization
+optuna==3.4.0
+hyperopt==0.2.7
+
+# Streaming and Real-time Processing
+aiokafka==0.9.0
+
+# Phone and Email Validation
+phonenumbers==8.13.25
+email-validator==2.1.0
+
+# User Agent and Device Analysis
+user-agents==2.2.0
+device-detector==6.1.1
+
+# Financial and Payment Processing
+stripe==7.7.0
+paypalrestsdk==1.13.3
+
+# Behavioral Analysis
+hmmlearn==0.3.0
+pomegranate==1.0.0
+
+# Time Series Forecasting
+prophet==1.1.5
+pmdarima==2.0.4
+
+# Graph Databases (for fraud networks)
+py2neo==2021.2.3
+
+# Async utilities
+asyncio-mqtt==0.16.1
+aiofiles==23.2.1
+
+# Memory profiling and optimization
+memory-profiler==0.61.0
+psutil==5.9.6
+
+# Model versioning
+dvc==3.37.0

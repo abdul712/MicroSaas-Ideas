@@ -1,0 +1,416 @@
+# Kong Declarative Configuration for FraudShield API Gateway
+# Provides authentication, rate limiting, and routing for all services
+
+_format_version: "3.0"
+_transform: true
+
+services:
+  # Fraud Detection Service
+  - name: fraud-detection-service
+    url: http://fraud-detection-service:8000
+    connect_timeout: 30000
+    write_timeout: 30000
+    read_timeout: 30000
+    retries: 3
+    tags:
+      - fraud-detection
+      - core-service
+
+  # ML Service
+  - name: ml-service  
+    url: http://ml-service:8001
+    connect_timeout: 60000  # ML inference may take longer
+    write_timeout: 60000
+    read_timeout: 60000
+    retries: 2
+    tags:
+      - ml-service
+      - ai-service
+
+  # Rules Engine
+  - name: rules-engine
+    url: http://rules-engine:3001
+    connect_timeout: 15000
+    write_timeout: 15000
+    read_timeout: 15000
+    retries: 3
+    tags:
+      - rules-engine
+      - business-logic
+
+  # Dashboard Frontend
+  - name: dashboard-frontend
+    url: http://dashboard:3000
+    connect_timeout: 10000
+    write_timeout: 10000
+    read_timeout: 10000
+    retries: 3
+    tags:
+      - frontend
+      - dashboard
+
+routes:
+  # Fraud Detection API Routes
+  - name: fraud-assess-route
+    service: fraud-detection-service
+    paths:
+      - /api/v1/assess
+    methods:
+      - POST
+    strip_path: false
+    preserve_host: false
+    tags:
+      - fraud-api
+
+  - name: fraud-batch-route
+    service: fraud-detection-service
+    paths:
+      - /api/v1/assess/batch
+    methods:
+      - POST
+    strip_path: false
+    tags:
+      - fraud-api
+      - batch-processing
+
+  - name: fraud-webhook-route
+    service: fraud-detection-service
+    paths:
+      - /api/v1/webhooks
+    methods:
+      - POST
+      - GET
+    strip_path: false
+    tags:
+      - webhooks
+
+  # ML Service Routes
+  - name: ml-predict-route
+    service: ml-service
+    paths:
+      - /api/v1/ml/predict
+    methods:
+      - POST
+    strip_path: false
+    tags:
+      - ml-api
+
+  - name: ml-features-route
+    service: ml-service
+    paths:
+      - /api/v1/ml/features
+    methods:
+      - POST
+      - GET
+    strip_path: false
+    tags:
+      - ml-api
+
+  - name: ml-models-route
+    service: ml-service
+    paths:
+      - /api/v1/ml/models
+    methods:
+      - GET
+      - POST
+      - PUT
+    strip_path: false
+    tags:
+      - ml-api
+      - model-management
+
+  # Rules Engine Routes
+  - name: rules-evaluate-route
+    service: rules-engine
+    paths:
+      - /api/v1/rules/evaluate
+    methods:
+      - POST
+    strip_path: false
+    tags:
+      - rules-api
+
+  - name: rules-manage-route
+    service: rules-engine
+    paths:
+      - /api/v1/rules
+    methods:
+      - GET
+      - POST
+      - PUT
+      - DELETE
+    strip_path: false
+    tags:
+      - rules-api
+
+  # Dashboard Routes
+  - name: dashboard-route
+    service: dashboard-frontend
+    paths:
+      - /dashboard
+    methods:
+      - GET
+    strip_path: true
+    tags:
+      - frontend
+
+  - name: dashboard-static-route
+    service: dashboard-frontend
+    paths:
+      - /_next
+      - /static
+    methods:
+      - GET
+    strip_path: false
+    tags:
+      - frontend
+      - static-assets
+
+  # Health Check Routes (no auth required)
+  - name: health-check-fraud-service
+    service: fraud-detection-service
+    paths:
+      - /health
+    methods:
+      - GET
+    strip_path: false
+    tags:
+      - health-check
+
+  - name: health-check-ml-service
+    service: ml-service
+    paths:
+      - /health
+    methods:
+      - GET
+    strip_path: false
+    tags:
+      - health-check
+
+  - name: health-check-rules-engine
+    service: rules-engine
+    paths:
+      - /health
+    methods:
+      - GET
+    strip_path: false
+    tags:
+      - health-check
+
+  # Metrics Routes (protected)
+  - name: metrics-fraud-service
+    service: fraud-detection-service
+    paths:
+      - /metrics
+    methods:
+      - GET
+    strip_path: false
+    tags:
+      - metrics
+
+  - name: metrics-ml-service
+    service: ml-service
+    paths:
+      - /metrics
+    methods:
+      - GET
+    strip_path: false
+    tags:
+      - metrics
+
+plugins:
+  # Global CORS Plugin
+  - name: cors
+    config:
+      origins:
+        - "http://localhost:3000"
+        - "http://localhost:3001"
+        - "https://*.fraudshield.com"
+      methods:
+        - GET
+        - POST
+        - PUT
+        - DELETE
+        - OPTIONS
+      headers:
+        - Accept
+        - Accept-Version
+        - Content-Length
+        - Content-MD5
+        - Content-Type
+        - Date
+        - Authorization
+        - X-API-Key
+      exposed_headers:
+        - X-Request-ID
+        - X-RateLimit-Remaining
+        - X-RateLimit-Limit
+      credentials: true
+      max_age: 3600
+    tags:
+      - cors
+      - security
+
+  # Global Request ID Plugin
+  - name: request-id
+    config:
+      header_name: X-Request-ID
+      generator: uuid
+      echo_downstream: true
+    tags:
+      - tracing
+
+  # Rate Limiting for API Routes
+  - name: rate-limiting-advanced
+    route: fraud-assess-route
+    config:
+      limit:
+        - 1000
+      window_size:
+        - 3600
+      identifier: consumer
+      sync_rate: 10
+      strategy: cluster
+      hide_client_headers: false
+    tags:
+      - rate-limiting
+
+  - name: rate-limiting-advanced
+    route: ml-predict-route
+    config:
+      limit:
+        - 500  # ML is more resource intensive
+      window_size:
+        - 3600
+      identifier: consumer
+      sync_rate: 10
+      strategy: cluster
+    tags:
+      - rate-limiting
+
+  # API Key Authentication for API routes
+  - name: key-auth
+    route: fraud-assess-route
+    config:
+      key_names:
+        - X-API-Key
+        - apikey
+      key_in_body: false
+      key_in_header: true
+      key_in_query: true
+      hide_credentials: true
+    tags:
+      - authentication
+
+  - name: key-auth
+    route: fraud-batch-route
+    config:
+      key_names:
+        - X-API-Key
+        - apikey
+      hide_credentials: true
+    tags:
+      - authentication
+
+  - name: key-auth
+    route: ml-predict-route
+    config:
+      key_names:
+        - X-API-Key
+        - apikey
+      hide_credentials: true
+    tags:
+      - authentication
+
+  - name: key-auth
+    route: rules-evaluate-route
+    config:
+      key_names:
+        - X-API-Key
+        - apikey
+      hide_credentials: true
+    tags:
+      - authentication
+
+  # Request Size Limiting
+  - name: request-size-limiting
+    config:
+      allowed_payload_size: 1024  # 1MB limit
+    tags:
+      - security
+
+  # Response Rate Limiting
+  - name: response-ratelimiting
+    config:
+      limits:
+        video: 10
+        user: 5
+      block_on_first_violation: false
+    tags:
+      - performance
+
+  # IP Restriction for admin endpoints
+  - name: ip-restriction
+    route: ml-models-route
+    config:
+      allow:
+        - 127.0.0.1
+        - 10.0.0.0/8
+        - 172.16.0.0/12
+        - 192.168.0.0/16
+      deny: []
+    tags:
+      - security
+      - admin-access
+
+  # Bot Detection
+  - name: bot-detection
+    config:
+      allow:
+        - postman
+        - insomnia
+      deny:
+        - bot
+        - crawler
+        - spider
+    tags:
+      - security
+
+  # Prometheus Metrics
+  - name: prometheus
+    config:
+      per_consumer: true
+      status_code_metrics: true
+      latency_metrics: true
+      bandwidth_metrics: true
+      upstream_health_metrics: true
+    tags:
+      - monitoring
+
+consumers:
+  # Default API Consumer for testing
+  - username: demo-merchant
+    custom_id: demo-001
+    tags:
+      - demo
+      - merchant
+
+  # System consumer for internal services
+  - username: system
+    custom_id: system-001
+    tags:
+      - system
+      - internal
+
+keyauth_credentials:
+  # Demo API Key
+  - consumer: demo-merchant
+    key: demo-api-key-change-in-production
+    tags:
+      - demo
+
+  # System API Key
+  - consumer: system
+    key: system-api-key-change-in-production
+    tags:
+      - system
