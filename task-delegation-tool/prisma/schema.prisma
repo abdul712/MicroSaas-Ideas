@@ -1,0 +1,405 @@
+// AI-Enhanced Task Delegation Platform Database Schema
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Organizations with AI configuration
+model Organization {
+  id                 String   @id @default(cuid())
+  name               String
+  slug               String   @unique
+  planType           PlanType @default(STARTER)
+  aiFeatures         Boolean  @default(false)
+  maxUsers           Int      @default(5)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  // AI Configuration
+  aiSettings         Json     @default("{}")
+  workloadThreshold  Float    @default(0.8)
+  burnoutPrevention  Boolean  @default(true)
+
+  // Relations
+  users              User[]
+  teams              Team[]
+  tasks              Task[]
+  aiInsights         AiInsight[]
+  subscriptions      Subscription[]
+
+  @@map("organizations")
+}
+
+// Enhanced user profiles with AI insights
+model User {
+  id                    String   @id @default(cuid())
+  organizationId        String
+  email                 String   @unique
+  fullName              String?
+  avatar                String?
+  role                  UserRole @default(MEMBER)
+  isActive              Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  // AI-Enhanced Features
+  skills                Json     @default("[]")
+  workPatterns          Json     @default("{}")
+  productivityScore     Float    @default(0.0)
+  cognitiveLoadThreshold Float   @default(0.8)
+  workloadCapacity      Float    @default(1.0)
+  timeZone              String   @default("UTC")
+  workingHours          Json     @default("{}")
+  
+  // Performance Metrics
+  averageTaskTime       Int      @default(0) // in minutes
+  completionRate        Float    @default(0.0)
+  qualityScore          Float    @default(0.0)
+  collaborationScore    Float    @default(0.0)
+
+  // Relations
+  organization          Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  teamMemberships       TeamMember[]
+  delegatedTasks        Task[]       @relation("TaskDelegator")
+  assignedTasks         Task[]       @relation("TaskAssignee")
+  taskUpdates           TaskUpdate[]
+  notifications         Notification[]
+  accounts              Account[]
+  sessions              Session[]
+
+  @@map("users")
+}
+
+// Team management with hierarchies
+model Team {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  description    String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // AI Features
+  teamDynamics   Json     @default("{}")
+  productivityMetrics Json @default("{}")
+
+  // Relations
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  members        TeamMember[]
+  tasks          Task[]
+
+  @@map("teams")
+}
+
+model TeamMember {
+  id         String     @id @default(cuid())
+  teamId     String
+  userId     String
+  role       TeamRole   @default(MEMBER)
+  joinedAt   DateTime   @default(now())
+
+  // Relations
+  team       Team       @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@map("team_members")
+}
+
+// AI-enhanced tasks with intelligent features
+model Task {
+  id                   String     @id @default(cuid())
+  organizationId       String
+  teamId               String?
+  title                String
+  description          String?
+  delegatorId          String
+  assigneeId           String?
+  priority             Priority   @default(MEDIUM)
+  status               TaskStatus @default(PENDING)
+  dueDate              DateTime?
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+  completedAt          DateTime?
+
+  // AI-Enhanced Features
+  complexityScore      Float?     // AI-calculated task complexity (0-1)
+  estimatedDuration    Int?       // AI prediction in minutes
+  predictedCompletion  DateTime?  // AI prediction
+  aiConfidence         Float?     // Model confidence score (0-1)
+  skillRequirements    Json       @default("[]")
+  dependencies         Json       @default("[]")
+  riskFactors          Json       @default("[]")
+  contextVector        String?    // For semantic search (can be stored as string representation)
+
+  // Workload Management
+  storyPoints          Int?       @default(1)
+  actualDuration       Int?       // Actual time taken in minutes
+  blockedReason        String?
+  blockedAt            DateTime?
+
+  // Quality Metrics
+  qualityScore         Float?     @default(0.0)
+  reworkCount          Int        @default(0)
+
+  // Relations
+  organization         Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team                 Team?        @relation(fields: [teamId], references: [id])
+  delegator            User         @relation("TaskDelegator", fields: [delegatorId], references: [id])
+  assignee             User?        @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  updates              TaskUpdate[]
+  reminders            Reminder[]
+  attachments          Attachment[]
+  timeEntries          TimeEntry[]
+
+  @@map("tasks")
+}
+
+// Task updates and communication
+model TaskUpdate {
+  id           String     @id @default(cuid())
+  taskId       String
+  userId       String
+  updateType   UpdateType
+  content      String?
+  previousValue String?
+  newValue     String?
+  createdAt    DateTime   @default(now())
+
+  // Relations
+  task         Task       @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user         User       @relation(fields: [userId], references: [id])
+
+  @@map("task_updates")
+}
+
+// AI-powered reminders and notifications
+model Reminder {
+  id               String        @id @default(cuid())
+  taskId           String
+  reminderType     ReminderType
+  scheduledFor     DateTime
+  sent             Boolean       @default(false)
+  responseReceived Boolean       @default(false)
+  createdAt        DateTime      @default(now())
+
+  // AI Features
+  priority         Int           @default(1) // AI-calculated priority
+  personalizedMessage String?    // AI-generated personalized reminder
+
+  // Relations
+  task             Task          @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@map("reminders")
+}
+
+// AI insights and predictions
+model AiInsight {
+  id             String      @id @default(cuid())
+  organizationId String
+  insightType    InsightType
+  subjectId      String?     // Can reference user, task, or team
+  subjectType    String?     // 'user', 'task', 'team', 'organization'
+  confidence     Float
+  data           Json
+  actionable     Boolean     @default(false)
+  dismissed      Boolean     @default(false)
+  createdAt      DateTime    @default(now())
+  expiresAt      DateTime?
+
+  // Relations
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("ai_insights")
+}
+
+// Real-time notifications
+model Notification {
+  id           String           @id @default(cuid())
+  userId       String
+  type         NotificationType
+  title        String
+  message      String
+  data         Json?
+  read         Boolean          @default(false)
+  actionTaken  Boolean          @default(false)
+  createdAt    DateTime         @default(now())
+  expiresAt    DateTime?
+
+  // Relations
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+// File attachments
+model Attachment {
+  id           String   @id @default(cuid())
+  taskId       String
+  fileName     String
+  fileSize     Int
+  mimeType     String
+  url          String
+  uploadedAt   DateTime @default(now())
+
+  // Relations
+  task         Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@map("attachments")
+}
+
+// Time tracking
+model TimeEntry {
+  id          String    @id @default(cuid())
+  taskId      String
+  startTime   DateTime
+  endTime     DateTime?
+  duration    Int?      // in minutes
+  description String?
+  createdAt   DateTime  @default(now())
+
+  // Relations
+  task        Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@map("time_entries")
+}
+
+// Authentication models (NextAuth)
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+// Subscription management
+model Subscription {
+  id               String            @id @default(cuid())
+  organizationId   String
+  stripeCustomerId String?           @unique
+  stripePriceId    String?
+  stripeCurrentPeriodEnd DateTime?
+  status           SubscriptionStatus @default(TRIAL)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  // Relations
+  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+// Enums
+enum PlanType {
+  STARTER
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  MEMBER
+}
+
+enum TeamRole {
+  LEAD
+  MEMBER
+}
+
+enum Priority {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum TaskStatus {
+  PENDING
+  ASSIGNED
+  ACCEPTED
+  IN_PROGRESS
+  BLOCKED
+  REVIEW
+  COMPLETED
+  CANCELLED
+}
+
+enum UpdateType {
+  STATUS_CHANGE
+  COMMENT
+  ASSIGNMENT
+  PRIORITY_CHANGE
+  DUE_DATE_CHANGE
+  ATTACHMENT
+  TIME_LOG
+  BLOCKER
+  PROGRESS
+}
+
+enum ReminderType {
+  DUE_SOON
+  OVERDUE
+  NO_RESPONSE
+  STALLED
+  FOLLOW_UP
+  ESCALATION
+}
+
+enum InsightType {
+  WORKLOAD_PREDICTION
+  BOTTLENECK_ALERT
+  PERFORMANCE_TREND
+  CAPACITY_WARNING
+  BURNOUT_RISK
+  OPTIMIZATION_SUGGESTION
+  SKILL_GAP
+  DEADLINE_RISK
+}
+
+enum NotificationType {
+  TASK_ASSIGNED
+  TASK_UPDATED
+  TASK_COMPLETED
+  REMINDER
+  MENTION
+  DEADLINE_APPROACHING
+  OVERDUE
+  AI_INSIGHT
+  SYSTEM
+}
+
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  INCOMPLETE
+}
