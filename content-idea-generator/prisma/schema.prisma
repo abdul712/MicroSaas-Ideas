@@ -1,0 +1,220 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  companyName   String?
+  industry      String?
+  targetAudience String?
+  subscriptionPlan String @default("free")
+  apiUsage      Int     @default(0)
+  apiLimit      Int     @default(10)
+  credits       Int     @default(10)
+  accounts      Account[]
+  sessions      Session[]
+  niches        UserNiche[]
+  ideas         ContentIdea[]
+  feedback      UserFeedback[]
+  analytics     UserAnalytics[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model UserNiche {
+  id          String   @id @default(cuid())
+  userId      String
+  nicheName   String
+  keywords    String[]
+  competitors String[]
+  isPrimary   Boolean  @default(false)
+  description String?
+  targetKeywords String[]
+  contentTypes String[]
+  toneOfVoice  String?
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ideas       ContentIdea[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, nicheName])
+}
+
+model ContentIdea {
+  id               String   @id @default(cuid())
+  userId           String
+  nicheId          String?
+  title            String
+  description      String?
+  outline          String?
+  keywords         String[]
+  primaryKeyword   String?
+  contentType      String   @default("blog_post")
+  difficultyScore  Float?
+  trendScore       Float?
+  competitionScore Float?
+  seoScore         Float?
+  searchVolume     Int?
+  isBookmarked     Boolean  @default(false)
+  isFavorite       Boolean  @default(false)
+  status           String   @default("generated") // generated, in_progress, published, archived
+  tags             String[]
+  estimatedReadTime Int?
+  targetWordCount  Int?
+  angle            String?
+  hookSuggestions  String[]
+  ctaSuggestions   String[]
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  niche            UserNiche? @relation(fields: [nicheId], references: [id], onDelete: SetNull)
+  feedback         UserFeedback[]
+  trends           TrendData[]
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([userId, createdAt])
+  @@index([nicheId])
+  @@index([trendScore])
+  @@index([competitionScore])
+}
+
+model TrendData {
+  id                String   @id @default(cuid())
+  keyword           String
+  searchVolume      Int?
+  trendDirection    String?  // rising, declining, stable, viral
+  geographicData    Json?
+  relatedQueries    String[]
+  competition       String?  // low, medium, high
+  cpc              Float?
+  difficulty       Float?
+  seasonalityData  Json?
+  contentIdeaId    String?
+  idea             ContentIdea? @relation(fields: [contentIdeaId], references: [id], onDelete: SetNull)
+  updatedAt        DateTime @updatedAt
+  createdAt        DateTime @default(now())
+
+  @@unique([keyword])
+  @@index([searchVolume])
+  @@index([trendDirection])
+}
+
+model UserFeedback {
+  id               String   @id @default(cuid())
+  userId           String
+  ideaId           String
+  rating           Int      // 1-5 stars
+  used             Boolean  @default(false)
+  published        Boolean  @default(false)
+  performanceData  Json?    // engagement metrics, views, etc.
+  comments         String?
+  improvementSuggestions String?
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  idea             ContentIdea @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([userId, ideaId])
+}
+
+model UserAnalytics {
+  id                    String   @id @default(cuid())
+  userId                String
+  date                  DateTime @default(now())
+  ideasGenerated        Int      @default(0)
+  ideasBookmarked       Int      @default(0)
+  ideasUsed             Int      @default(0)
+  trendsAnalyzed        Int      @default(0)
+  apiCallsMade          Int      @default(0)
+  sessionDuration       Int?     // in minutes
+  featuresUsed          String[] // array of feature names
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@index([date])
+}
+
+model CompetitorAnalysis {
+  id                String   @id @default(cuid())
+  domain            String   @unique
+  companyName       String
+  industry          String?
+  contentTopics     String[]
+  publishingFrequency Int?
+  averageWordCount  Int?
+  topKeywords       String[]
+  contentGaps       Json?
+  strengthsWeaknesses Json?
+  lastAnalyzed      DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  createdAt         DateTime @default(now())
+
+  @@index([industry])
+  @@index([lastAnalyzed])
+}
+
+model APIUsageLog {
+  id            String   @id @default(cuid())
+  userId        String?
+  endpoint      String
+  method        String
+  statusCode    Int
+  responseTime  Int      // in milliseconds
+  requestSize   Int?     // in bytes
+  responseSize  Int?     // in bytes
+  userAgent     String?
+  ipAddress     String?
+  errorMessage  String?
+  metadata      Json?
+  timestamp     DateTime @default(now())
+
+  @@index([userId])
+  @@index([timestamp])
+  @@index([endpoint])
+}
