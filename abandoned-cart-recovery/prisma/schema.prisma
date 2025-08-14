@@ -1,0 +1,452 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                String              @id @default(cuid())
+  email            String              @unique
+  name             String?
+  avatar           String?
+  role             Role                @default(USER)
+  organizationId   String?
+  organization     Organization?       @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  subscriptions    Subscription[]
+  notifications    Notification[]
+  apiKeys          ApiKey[]
+  auditLogs        AuditLog[]
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  @@map("users")
+}
+
+model Organization {
+  id              String         @id @default(cuid())
+  name            String
+  industry        String?
+  size            CompanySize?
+  timezone        String         @default("UTC")
+  logo            String?
+  website         String?
+  users           User[]
+  stores          Store[]
+  campaigns       Campaign[]
+  subscriptions   Subscription[]
+  notifications   Notification[]
+  settings        Json           @default("{}")
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@map("organizations")
+}
+
+model Store {
+  id                String             @id @default(cuid())
+  organizationId    String
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  platform          EcommercePlatform
+  storeName         String
+  storeUrl          String
+  apiCredentials    Json // Encrypted credentials
+  webhookSecret     String?
+  syncStatus        SyncStatus         @default(ACTIVE)
+  lastSync          DateTime?
+  syncFrequency     Int                @default(3600) // seconds
+  errorCount        Int                @default(0)
+  lastError         String?
+  settings          Json               @default("{}")
+  customers         Customer[]
+  abandonedCarts    AbandonedCart[]
+  campaigns         Campaign[]
+  templates         Template[]
+  analytics         Analytics[]
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@unique([organizationId, platform, storeUrl])
+  @@map("stores")
+}
+
+model Customer {
+  id                String          @id @default(cuid())
+  storeId           String
+  store             Store           @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  externalId        String // Platform customer ID
+  email             String
+  phone             String?
+  firstName         String?
+  lastName          String?
+  totalOrders       Int             @default(0)
+  totalSpent        Decimal         @default(0)
+  consentEmail      Boolean         @default(false)
+  consentSms        Boolean         @default(false)
+  optOutEmail       Boolean         @default(false)
+  optOutSms         Boolean         @default(false)
+  lastActivity      DateTime?
+  abandonedCarts    AbandonedCart[]
+  messages          Message[]
+  metadata          Json            @default("{}")
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([storeId, externalId])
+  @@unique([storeId, email])
+  @@index([storeId, consentEmail, consentSms])
+  @@index([storeId, lastActivity])
+  @@map("customers")
+}
+
+model AbandonedCart {
+  id                String      @id @default(cuid())
+  storeId           String
+  store             Store       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  customerId        String
+  customer          Customer    @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  externalCartId    String // Platform cart ID
+  sessionId         String?
+  cartUrl           String
+  cartValue         Decimal
+  cartItems         Json // Product details, images, prices
+  abandonedAt       DateTime
+  recovered         Boolean     @default(false)
+  recoveredAt       DateTime?
+  recoveryRevenue   Decimal?
+  recoveryMethod    RecoveryMethod?
+  messages          Message[]
+  metadata          Json        @default("{}")
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  @@unique([storeId, externalCartId])
+  @@index([storeId, abandonedAt])
+  @@index([customerId, abandonedAt])
+  @@index([storeId, recovered, abandonedAt])
+  @@map("abandoned_carts")
+}
+
+model Campaign {
+  id                  String        @id @default(cuid())
+  organizationId      String
+  organization        Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  storeId             String
+  store               Store         @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  name                String
+  description         String?
+  type                CampaignType  @default(AUTOMATED)
+  status              CampaignStatus @default(DRAFT)
+  triggerConditions   Json          @default("{}")
+  sequenceSteps       Json          @default("[]")
+  performanceMetrics  Json          @default("{}")
+  messages            Message[]
+  abTests             AbTest[]
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  @@index([storeId, status])
+  @@map("campaigns")
+}
+
+model Message {
+  id              String        @id @default(cuid())
+  campaignId      String
+  campaign        Campaign      @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  cartId          String
+  cart            AbandonedCart @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  customerId      String
+  customer        Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  stepIndex       Int
+  channel         MessageChannel
+  templateId      String?
+  template        Template?     @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  subject         String?
+  content         String
+  status          MessageStatus @default(QUEUED)
+  sentAt          DateTime?
+  deliveredAt     DateTime?
+  openedAt        DateTime?
+  clickedAt       DateTime?
+  errorMessage    String?
+  metadata        Json          @default("{}")
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([campaignId, status, sentAt])
+  @@index([customerId, channel, sentAt])
+  @@index([cartId, stepIndex])
+  @@map("messages")
+}
+
+model Template {
+  id            String          @id @default(cuid())
+  storeId       String
+  store         Store           @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  name          String
+  type          MessageChannel
+  subject       String? // For email templates
+  htmlContent   String?
+  textContent   String
+  variables     Json            @default("[]")
+  designConfig  Json            @default("{}")
+  previewData   Json            @default("{}")
+  isDefault     Boolean         @default(false)
+  messages      Message[]
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([storeId, type])
+  @@map("templates")
+}
+
+model Analytics {
+  id                    String    @id @default(cuid())
+  storeId               String
+  store                 Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  date                  DateTime  @db.Date
+  cartsAbandoned        Int       @default(0)
+  campaignsSent         Int       @default(0)
+  emailsSent            Int       @default(0)
+  smsSent               Int       @default(0)
+  emailsOpened          Int       @default(0)
+  emailsClicked         Int       @default(0)
+  smsClicked            Int       @default(0)
+  cartsRecovered        Int       @default(0)
+  revenueRecovered      Decimal   @default(0)
+  recoveryRate          Decimal   @default(0)
+  avgTimeToRecovery     Int?      // seconds
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@unique([storeId, date])
+  @@index([storeId, date])
+  @@index([date]) // For global analytics
+  @@map("analytics")
+}
+
+model AbTest {
+  id          String        @id @default(cuid())
+  campaignId  String
+  campaign    Campaign      @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  name        String
+  type        AbTestType
+  variants    Json          @default("[]")
+  allocation  Json          @default("{}")
+  status      AbTestStatus  @default(RUNNING)
+  startedAt   DateTime      @default(now())
+  endedAt     DateTime?
+  results     Json          @default("{}")
+  winner      String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([campaignId, status])
+  @@map("ab_tests")
+}
+
+model Subscription {
+  id                  String               @id @default(cuid())
+  organizationId      String
+  organization        Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId              String
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stripeSubscriptionId String?            @unique
+  stripeCustomerId    String?             @unique
+  plan                SubscriptionPlan
+  status              SubscriptionStatus
+  currentPeriodStart  DateTime
+  currentPeriodEnd    DateTime
+  cancelAtPeriodEnd   Boolean             @default(false)
+  trialEndsAt         DateTime?
+  metadata            Json                @default("{}")
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  @@map("subscriptions")
+}
+
+model Notification {
+  id          String              @id @default(cuid())
+  organizationId String?
+  organization Organization?      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        NotificationType
+  channel     NotificationChannel
+  title       String
+  message     String
+  status      NotificationStatus  @default(PENDING)
+  sentAt      DateTime?
+  readAt      DateTime?
+  metadata    Json                @default("{}")
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@index([userId, status])
+  @@map("notifications")
+}
+
+model ApiKey {
+  id          String      @id @default(cuid())
+  userId      String
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  keyHash     String      @unique
+  permissions Json        @default("[]")
+  lastUsed    DateTime?
+  expiresAt   DateTime?
+  isActive    Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+
+  @@map("api_keys")
+}
+
+model AuditLog {
+  id              String    @id @default(cuid())
+  userId          String?
+  user            User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action          String
+  resource        String
+  resourceId      String?
+  oldValues       Json?
+  newValues       Json?
+  ipAddress       String?
+  userAgent       String?
+  metadata        Json      @default("{}")
+  createdAt       DateTime  @default(now())
+
+  @@index([userId, createdAt])
+  @@index([resource, resourceId])
+  @@map("audit_logs")
+}
+
+// Enums
+enum Role {
+  USER
+  ADMIN
+  OWNER
+}
+
+enum CompanySize {
+  SOLO
+  SMALL      // 2-10
+  MEDIUM     // 11-50
+  LARGE      // 51-200
+  ENTERPRISE // 200+
+}
+
+enum EcommercePlatform {
+  SHOPIFY
+  WOOCOMMERCE
+  BIGCOMMERCE
+  MAGENTO
+  CUSTOM
+}
+
+enum SyncStatus {
+  ACTIVE
+  INACTIVE
+  ERROR
+  SYNCING
+  PENDING
+}
+
+enum CampaignType {
+  AUTOMATED
+  MANUAL
+  TRIGGERED
+}
+
+enum CampaignStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  COMPLETED
+  ARCHIVED
+}
+
+enum MessageChannel {
+  EMAIL
+  SMS
+  PUSH
+  WEBHOOK
+}
+
+enum MessageStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  OPENED
+  CLICKED
+  FAILED
+  BOUNCED
+  COMPLAINED
+}
+
+enum RecoveryMethod {
+  EMAIL
+  SMS
+  DIRECT
+  PUSH
+}
+
+enum AbTestType {
+  SUBJECT_LINE
+  CONTENT
+  TIMING
+  TEMPLATE
+  DISCOUNT
+}
+
+enum AbTestStatus {
+  DRAFT
+  RUNNING
+  COMPLETED
+  PAUSED
+}
+
+enum SubscriptionPlan {
+  STARTER
+  GROWTH
+  SCALE
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  UNPAID
+}
+
+enum NotificationType {
+  ALERT
+  SYSTEM
+  MARKETING
+  CAMPAIGN
+  RECOVERY
+}
+
+enum NotificationChannel {
+  EMAIL
+  SMS
+  PUSH
+  SLACK
+  WEBHOOK
+  IN_APP
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  DELIVERED
+  FAILED
+  READ
+}
