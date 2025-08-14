@@ -1,0 +1,156 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222.2 84% 4.9%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96%;
+    --accent-foreground: 222.2 84% 4.9%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 221.2 83.2% 53.3%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 84% 4.9%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 224.3 76.3% 94.1%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Custom feedback widget styles */
+.feedback-widget {
+  @apply fixed z-50 shadow-lg border border-border rounded-lg bg-background;
+}
+
+.feedback-widget-popup {
+  @apply bottom-4 right-4 w-80 max-w-sm;
+}
+
+.feedback-widget-sidebar {
+  @apply top-0 right-0 h-full w-96 max-w-sm rounded-none border-l;
+}
+
+.feedback-widget-floating {
+  @apply bottom-4 right-4 w-12 h-12 rounded-full cursor-pointer flex items-center justify-center;
+}
+
+.feedback-form {
+  @apply space-y-4 p-6;
+}
+
+.feedback-rating {
+  @apply flex gap-2 justify-center;
+}
+
+.feedback-star {
+  @apply w-8 h-8 cursor-pointer transition-colors;
+}
+
+.feedback-star.active {
+  @apply text-yellow-500 fill-current;
+}
+
+.feedback-star.inactive {
+  @apply text-gray-300 hover:text-yellow-400;
+}
+
+/* Analytics dashboard styles */
+.analytics-card {
+  @apply bg-card text-card-foreground rounded-lg border shadow-sm;
+}
+
+.metric-value {
+  @apply text-3xl font-bold;
+}
+
+.metric-label {
+  @apply text-sm text-muted-foreground;
+}
+
+.sentiment-positive {
+  @apply text-green-600 bg-green-50 dark:bg-green-950;
+}
+
+.sentiment-negative {
+  @apply text-red-600 bg-red-50 dark:bg-red-950;
+}
+
+.sentiment-neutral {
+  @apply text-gray-600 bg-gray-50 dark:bg-gray-950;
+}
+
+/* Loading animations */
+.loading-spinner {
+  @apply animate-spin rounded-full border-2 border-gray-300 border-t-primary;
+}
+
+.loading-pulse {
+  @apply animate-pulse bg-gray-200 dark:bg-gray-700 rounded;
+}
+
+/* Mobile responsiveness */
+@media (max-width: 768px) {
+  .feedback-widget-popup {
+    @apply bottom-2 right-2 left-2 w-auto;
+  }
+  
+  .feedback-widget-sidebar {
+    @apply w-full;
+  }
+}
+
+/* Accessibility improvements */
+.sr-only {
+  @apply absolute w-px h-px p-0 -m-px overflow-hidden whitespace-nowrap border-0;
+}
+
+/* Focus styles */
+.focus-visible:focus {
+  @apply outline-none ring-2 ring-ring ring-offset-2;
+}
+
+/* Smooth transitions */
+.transition-all {
+  @apply transition-all duration-200 ease-in-out;
+}
