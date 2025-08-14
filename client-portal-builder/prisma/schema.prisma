@@ -1,0 +1,569 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Account (Organization/Tenant)
+model Account {
+  id             String    @id @default(cuid())
+  name           String
+  slug           String    @unique
+  domain         String?   @unique
+  plan           Plan      @default(STARTER)
+  status         AccountStatus @default(ACTIVE)
+  settings       Json      @default("{}")
+  brandingConfig Json      @default("{}")
+  
+  // Timestamps
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  
+  // Relations
+  users          User[]
+  portals        Portal[]
+  clients        Client[]
+  subscriptions  Subscription[]
+  
+  @@map("accounts")
+}
+
+// Users (Account owners and team members)
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  avatar    String?
+  password  String?  // For credential-based auth
+  role      UserRole @default(MEMBER)
+  status    UserStatus @default(ACTIVE)
+  
+  // Account association
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  
+  // Auth
+  emailVerified DateTime?
+  
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Relations
+  sessions      Session[]
+  accounts      UserAccount[]
+  ownedPortals  Portal[]
+  messages      Message[]
+  activities    Activity[]
+  files         File[]
+  
+  @@map("users")
+}
+
+// NextAuth Account model
+model UserAccount {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([provider, providerAccountId])
+  @@map("user_accounts")
+}
+
+// NextAuth Session model
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("sessions")
+}
+
+// NextAuth Verification Token model
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+  
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// Clients (External users accessing portals)
+model Client {
+  id       String @id @default(cuid())
+  email    String
+  name     String
+  company  String?
+  phone    String?
+  avatar   String?
+  
+  // Account association
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  
+  // Access control
+  accessKey String @unique @default(cuid())
+  status    ClientStatus @default(ACTIVE)
+  
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Relations
+  portals        Portal[]
+  portalAccess   PortalAccess[]
+  messages       Message[]
+  activities     Activity[]
+  
+  @@unique([email, accountId])
+  @@map("clients")
+}
+
+// Portal (Individual client portal)
+model Portal {
+  id          String @id @default(cuid())
+  name        String
+  slug        String
+  description String?
+  
+  // Owner
+  ownerId   String
+  owner     User   @relation(fields: [ownerId], references: [id])
+  
+  // Account association
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  
+  // Client association
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  
+  // Portal configuration
+  config      Json @default("{}")
+  theme       Json @default("{}")
+  modules     Json @default("[]")
+  permissions Json @default("{}")
+  
+  // Status
+  status      PortalStatus @default(DRAFT)
+  visibility  PortalVisibility @default(PRIVATE)
+  
+  // Custom domain
+  customDomain String?
+  
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  publishedAt DateTime?
+  
+  // Relations
+  portalAccess PortalAccess[]
+  files        File[]
+  folders      Folder[]
+  messages     Message[]
+  activities   Activity[]
+  projects     Project[]
+  
+  @@unique([slug, accountId])
+  @@map("portals")
+}
+
+// Portal Access (Permissions for portal access)
+model PortalAccess {
+  id       String @id @default(cuid())
+  
+  portalId String
+  portal   Portal @relation(fields: [portalId], references: [id], onDelete: Cascade)
+  
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  
+  role        PortalRole @default(VIEWER)
+  permissions Json       @default("{}")
+  
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@unique([portalId, clientId])
+  @@map("portal_access")
+}
+
+// File management
+model Folder {
+  id        String @id @default(cuid())
+  name      String
+  path      String
+  
+  // Portal association
+  portalId String
+  portal   Portal @relation(fields: [portalId], references: [id], onDelete: Cascade)
+  
+  // Hierarchy
+  parentId String?
+  parent   Folder? @relation("FolderHierarchy", fields: [parentId], references: [id])
+  children Folder[] @relation("FolderHierarchy")
+  
+  // Permissions
+  permissions Json @default("{}")
+  
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Relations
+  files File[]
+  
+  @@map("folders")
+}
+
+model File {
+  id          String @id @default(cuid())
+  name        String
+  originalName String
+  mimeType    String
+  size        Int
+  path        String
+  url         String?
+  
+  // Portal association
+  portalId String
+  portal   Portal @relation(fields: [portalId], references: [id], onDelete: Cascade)
+  
+  // Folder association
+  folderId String?
+  folder   Folder? @relation(fields: [folderId], references: [id])
+  
+  // Upload info
+  uploadedById String
+  uploadedBy   User   @relation(fields: [uploadedById], references: [id])
+  
+  // File metadata
+  metadata    Json @default("{}")
+  permissions Json @default("{}")
+  
+  // Versioning
+  version     Int @default(1)
+  
+  // Status
+  status      FileStatus @default(ACTIVE)
+  
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Relations
+  activities Activity[]
+  
+  @@map("files")
+}
+
+// Communication
+model Message {
+  id      String @id @default(cuid())
+  subject String?
+  content String
+  type    MessageType @default(MESSAGE)
+  
+  // Portal association
+  portalId String
+  portal   Portal @relation(fields: [portalId], references: [id], onDelete: Cascade)
+  
+  // Sender
+  senderId String?
+  sender   User?   @relation(fields: [senderId], references: [id])
+  
+  // Client sender
+  clientSenderId String?
+  clientSender   Client? @relation(fields: [clientSenderId], references: [id])
+  
+  // Thread
+  threadId String?
+  thread   Message? @relation("MessageThread", fields: [threadId], references: [id])
+  replies  Message[] @relation("MessageThread")
+  
+  // Metadata
+  metadata Json @default("{}")
+  
+  // Status
+  status   MessageStatus @default(SENT)
+  readAt   DateTime?
+  
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Relations
+  activities Activity[]
+  
+  @@map("messages")
+}
+
+// Activity tracking
+model Activity {
+  id     String @id @default(cuid())
+  type   ActivityType
+  action String
+  description String?
+  
+  // Portal association
+  portalId String
+  portal   Portal @relation(fields: [portalId], references: [id], onDelete: Cascade)
+  
+  // User association (internal)
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id])
+  
+  // Client association (external)
+  clientId String?
+  client   Client? @relation(fields: [clientId], references: [id])
+  
+  // Related entities
+  fileId    String?
+  file      File?    @relation(fields: [fileId], references: [id])
+  messageId String?
+  message   Message? @relation(fields: [messageId], references: [id])
+  
+  // Metadata
+  metadata Json @default("{}")
+  
+  // IP and user agent for security
+  ipAddress String?
+  userAgent String?
+  
+  // Timestamps
+  createdAt DateTime @default(now())
+  
+  @@map("activities")
+}
+
+// Project management
+model Project {
+  id          String @id @default(cuid())
+  name        String
+  description String?
+  
+  // Portal association
+  portalId String
+  portal   Portal @relation(fields: [portalId], references: [id], onDelete: Cascade)
+  
+  // Project details
+  status      ProjectStatus @default(PLANNING)
+  priority    ProjectPriority @default(MEDIUM)
+  progress    Int @default(0)
+  
+  // Dates
+  startDate   DateTime?
+  dueDate     DateTime?
+  completedAt DateTime?
+  
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Relations
+  tasks Task[]
+  
+  @@map("projects")
+}
+
+model Task {
+  id          String @id @default(cuid())
+  title       String
+  description String?
+  
+  // Project association
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  
+  // Task details
+  status      TaskStatus @default(TODO)
+  priority    TaskPriority @default(MEDIUM)
+  
+  // Dates
+  dueDate     DateTime?
+  completedAt DateTime?
+  
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@map("tasks")
+}
+
+// Subscription management
+model Subscription {
+  id             String @id @default(cuid())
+  
+  // Account association
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  
+  // Stripe details
+  stripeCustomerId       String?
+  stripeSubscriptionId   String? @unique
+  stripePriceId         String?
+  stripeCurrentPeriodEnd DateTime?
+  
+  // Subscription details
+  plan       Plan @default(STARTER)
+  status     SubscriptionStatus @default(ACTIVE)
+  
+  // Usage tracking
+  portalCount    Int @default(0)
+  storageUsed    Int @default(0) // in bytes
+  bandwidthUsed  Int @default(0) // in bytes
+  
+  // Limits
+  portalLimit    Int @default(5)
+  storageLimit   Int @default(10737418240) // 10GB in bytes
+  bandwidthLimit Int @default(107374182400) // 100GB in bytes
+  
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@map("subscriptions")
+}
+
+// Enums
+enum Plan {
+  STARTER
+  PROFESSIONAL
+  AGENCY
+  ENTERPRISE
+}
+
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+  CANCELLED
+}
+
+enum UserRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum ClientStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum PortalStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum PortalVisibility {
+  PRIVATE
+  PUBLIC
+  PASSWORD_PROTECTED
+}
+
+enum PortalRole {
+  VIEWER
+  COLLABORATOR
+  ADMIN
+}
+
+enum FileStatus {
+  ACTIVE
+  ARCHIVED
+  DELETED
+}
+
+enum MessageType {
+  MESSAGE
+  NOTIFICATION
+  ANNOUNCEMENT
+}
+
+enum MessageStatus {
+  SENT
+  DELIVERED
+  READ
+}
+
+enum ActivityType {
+  FILE_UPLOAD
+  FILE_DOWNLOAD
+  FILE_DELETE
+  MESSAGE_SENT
+  MESSAGE_READ
+  PORTAL_ACCESS
+  PORTAL_UPDATE
+  USER_LOGIN
+  USER_LOGOUT
+  PROJECT_CREATE
+  PROJECT_UPDATE
+  TASK_CREATE
+  TASK_UPDATE
+  TASK_COMPLETE
+}
+
+enum ProjectStatus {
+  PLANNING
+  IN_PROGRESS
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+}
+
+enum ProjectPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  REVIEW
+  COMPLETED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  UNPAID
+}
