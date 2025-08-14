@@ -1,0 +1,285 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222.2 84% 4.9%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96%;
+    --accent-foreground: 222.2 84% 4.9%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 221.2 83.2% 53.3%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 84% 4.9%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 224.3 76.3% 94.1%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Custom scrollbar styles */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-muted;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-border rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-muted-foreground;
+}
+
+/* Loading spinner animation */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+/* Caption generation animation */
+@keyframes caption-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.caption-generating {
+  animation: caption-pulse 2s ease-in-out infinite;
+}
+
+/* Platform-specific gradients */
+.instagram-gradient {
+  background: linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%);
+}
+
+.facebook-gradient {
+  background: linear-gradient(135deg, #1877f2 0%, #42a5f5 100%);
+}
+
+.twitter-gradient {
+  background: linear-gradient(135deg, #1da1f2 0%, #0d47a1 100%);
+}
+
+.linkedin-gradient {
+  background: linear-gradient(135deg, #0a66c2 0%, #004182 100%);
+}
+
+.tiktok-gradient {
+  background: linear-gradient(135deg, #000000 0%, #424242 100%);
+}
+
+/* Brand voice indicator */
+.brand-voice-active {
+  @apply relative;
+}
+
+.brand-voice-active::before {
+  content: '';
+  @apply absolute -inset-0.5 rounded-lg bg-gradient-to-r from-purple-600 to-pink-600 opacity-75 blur;
+}
+
+.brand-voice-active > * {
+  @apply relative bg-background rounded-lg;
+}
+
+/* Analytics charts */
+.analytics-chart {
+  @apply text-xs;
+}
+
+.analytics-chart .recharts-tooltip-wrapper {
+  @apply rounded-lg border bg-popover text-popover-foreground shadow-md;
+}
+
+/* Image upload zone */
+.image-upload-zone {
+  @apply relative border-2 border-dashed border-muted-foreground/25 rounded-lg transition-colors;
+}
+
+.image-upload-zone:hover {
+  @apply border-muted-foreground/50;
+}
+
+.image-upload-zone.dragover {
+  @apply border-primary bg-primary/5;
+}
+
+/* Caption preview cards */
+.caption-preview {
+  @apply relative overflow-hidden rounded-lg border bg-card text-card-foreground shadow-sm;
+}
+
+.caption-preview::before {
+  content: '';
+  @apply absolute inset-0 bg-gradient-to-br from-transparent to-black/5 pointer-events-none;
+}
+
+.caption-preview.instagram::before {
+  @apply from-instagram/10 to-instagram/5;
+}
+
+.caption-preview.facebook::before {
+  @apply from-facebook/10 to-facebook/5;
+}
+
+.caption-preview.twitter::before {
+  @apply from-twitter/10 to-twitter/5;
+}
+
+.caption-preview.linkedin::before {
+  @apply from-linkedin/10 to-linkedin/5;
+}
+
+.caption-preview.tiktok::before {
+  @apply from-tiktok/10 to-tiktok/5;
+}
+
+/* Team collaboration indicators */
+.user-avatar-stack {
+  @apply flex -space-x-2;
+}
+
+.user-avatar-stack .avatar {
+  @apply ring-2 ring-background;
+}
+
+/* Success states */
+.success-pulse {
+  animation: success-pulse 0.6s ease-out;
+}
+
+@keyframes success-pulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* Error states */
+.error-shake {
+  animation: error-shake 0.5s ease-in-out;
+}
+
+@keyframes error-shake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-5px);
+  }
+  75% {
+    transform: translateX(5px);
+  }
+}
+
+/* Mobile optimizations */
+@media (max-width: 768px) {
+  .mobile-scroll {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  
+  .mobile-scroll::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .caption-preview::before {
+    opacity: 0;
+  }
+  
+  .brand-voice-active::before {
+    opacity: 1;
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .animate-spin,
+  .caption-generating,
+  .success-pulse,
+  .error-shake {
+    animation: none;
+  }
+}
+
+/* Focus visible improvements */
+.focus-visible:focus-visible {
+  @apply outline-2 outline-offset-2 outline-primary;
+}
+
+/* Print styles */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  
+  .caption-preview {
+    @apply border border-gray-300;
+  }
+  
+  .caption-preview::before {
+    display: none;
+  }
+}

@@ -1,0 +1,405 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  extensions = [vector]
+}
+
+// Authentication & User Management
+model User {
+  id                String   @id @default(cuid())
+  email             String   @unique
+  name              String?
+  image             String?
+  emailVerified     DateTime?
+  
+  // Subscription & Credits
+  subscriptionTier  String   @default("free") // free, creator, professional, agency
+  creditsRemaining  Int      @default(20)
+  creditsRenewedAt  DateTime @default(now())
+  
+  // Profile
+  avatarUrl         String?
+  timezone          String   @default("UTC")
+  preferences       Json?    // UI preferences, notifications, etc.
+  
+  // Timestamps
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  lastLoginAt       DateTime?
+
+  // Relations
+  accounts          Account[]
+  sessions          Session[]
+  organizationMembers OrganizationMember[]
+  captions          Caption[]
+  apiUsage          ApiUsage[]
+  
+  @@map("users")
+}
+
+// NextAuth.js models
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// Multi-tenancy
+model Organization {
+  id           String   @id @default(cuid())
+  name         String
+  slug         String   @unique
+  description  String?
+  
+  // Subscription
+  plan         String   @default("starter") // starter, growth, enterprise
+  billingEmail String?
+  stripeCustomerId String?
+  
+  // Settings
+  logo         String?
+  website      String?
+  settings     Json?    // organization-wide settings
+  
+  // Timestamps
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  members      OrganizationMember[]
+  brandVoices  BrandVoice[]
+  projects     Project[]
+  platformSettings PlatformSetting[]
+  apiUsage     ApiUsage[]
+  
+  @@map("organizations")
+}
+
+model OrganizationMember {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String
+  role           String   @default("member") // owner, admin, member, viewer
+  permissions    Json?    // custom permissions
+  joinedAt       DateTime @default(now())
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@map("organization_members")
+}
+
+// Brand Voice & AI Training
+model BrandVoice {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  description    String?
+  
+  // Voice characteristics
+  tone           String? // professional, casual, friendly, humorous, etc.
+  personality    Json?   // structured personality traits
+  industry       String? // tech, fashion, food, etc.
+  targetAudience String? // millennials, professionals, etc.
+  
+  // Training data
+  sampleContent  String[] // example captions for training
+  keywords       String[] // brand-specific keywords
+  hashtags       String[] // preferred hashtags
+  
+  // AI embeddings (for similarity matching)
+  embeddingVector Unsupported("vector(1536)")?
+  
+  // Metadata
+  isActive       Boolean  @default(true)
+  isDefault      Boolean  @default(false)
+  usageCount     Int      @default(0)
+  
+  // Timestamps
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  projects       Project[]
+  captions       Caption[]
+  
+  @@map("brand_voices")
+}
+
+// Project Management
+model Project {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  description    String?
+  
+  // Project settings
+  brandVoiceId   String?
+  targetPlatforms String[] // instagram, facebook, twitter, etc.
+  defaultTone    String?
+  settings       Json?    // project-specific settings
+  
+  // Collaboration
+  isPublic       Boolean  @default(false)
+  allowedMembers String[] // user IDs with access
+  
+  // Metadata
+  status         String   @default("active") // active, archived, paused
+  createdBy      String
+  
+  // Timestamps
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  brandVoice     BrandVoice?  @relation(fields: [brandVoiceId], references: [id])
+  captions       Caption[]
+  
+  @@map("projects")
+}
+
+// Generated Captions
+model Caption {
+  id             String   @id @default(cuid())
+  projectId      String
+  userId         String
+  brandVoiceId   String?
+  
+  // Input data
+  prompt         String?  // user-provided prompt/description
+  imageUrl       String?  // uploaded image URL
+  imageAnalysis  Json?    // Google Vision API results
+  targetPlatform String   // instagram, facebook, twitter, etc.
+  
+  // Generated content
+  captionText    String
+  hashtags       String[]
+  emojis         String[]
+  callToAction   String?
+  
+  // AI metadata
+  aiModel        String   // gpt-4, claude-3, gemini-pro, etc.
+  generationTime Int?     // milliseconds
+  tokensUsed     Int?     // AI tokens consumed
+  qualityScore   Float?   // 0.0-1.0 quality assessment
+  
+  // Performance tracking
+  engagementRate Float?   // if connected to social accounts
+  clicks         Int      @default(0)
+  shares         Int      @default(0)
+  saves          Int      @default(0)
+  
+  // Status & organization
+  status         String   @default("generated") // generated, approved, posted, archived
+  isFavorite     Boolean  @default(false)
+  tags           String[] // user-defined tags
+  
+  // Publishing
+  publishedAt    DateTime?
+  socialPostId   String?  // ID from social platform
+  socialPlatform String?  // actual platform used
+  
+  // Timestamps
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  project        Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id])
+  brandVoice     BrandVoice?  @relation(fields: [brandVoiceId], references: [id])
+  analytics      CaptionAnalytics[]
+  
+  @@map("captions")
+}
+
+// Platform-specific Settings
+model PlatformSetting {
+  id             String   @id @default(cuid())
+  organizationId String
+  platform       String   // instagram, facebook, twitter, etc.
+  
+  // Platform-specific configurations
+  settings       Json     // character limits, hashtag preferences, posting times, etc.
+  
+  // Social media account connections
+  isConnected    Boolean  @default(false)
+  accessToken    String?  // encrypted social media access token
+  refreshToken   String?  // encrypted refresh token
+  accountId      String?  // social media account ID
+  accountHandle  String?  // @username
+  
+  // Timestamps
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, platform])
+  @@map("platform_settings")
+}
+
+// Analytics & Performance Tracking
+model CaptionAnalytics {
+  id             String   @id @default(cuid())
+  captionId      String
+  platform       String
+  
+  // Engagement metrics
+  likes          Int      @default(0)
+  comments       Int      @default(0)
+  shares         Int      @default(0)
+  saves          Int      @default(0)
+  reach          Int      @default(0)
+  impressions    Int      @default(0)
+  
+  // Calculated metrics
+  engagementRate Float?   // (likes + comments + shares) / impressions
+  clickThroughRate Float? // clicks / impressions
+  saveRate       Float?   // saves / impressions
+  
+  // Time-based metrics
+  peakEngagementHour Int? // hour of day with most engagement
+  
+  // Data collection
+  collectedAt    DateTime @default(now())
+  lastUpdatedAt  DateTime @updatedAt
+
+  caption        Caption  @relation(fields: [captionId], references: [id], onDelete: Cascade)
+  
+  @@unique([captionId, platform])
+  @@map("caption_analytics")
+}
+
+// API Usage & Cost Tracking
+model ApiUsage {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String
+  
+  // API details
+  endpoint       String   // /api/captions/generate, etc.
+  method         String   // POST, GET, etc.
+  
+  // AI service details
+  aiProvider     String   // openai, anthropic, google
+  aiModel        String   // gpt-4, claude-3, gemini-pro
+  tokensUsed     Int?     // tokens consumed
+  
+  // Cost tracking
+  costUsd        Float?   // cost in USD
+  
+  // Performance
+  responseTimeMs Int?     // API response time
+  
+  // Metadata
+  userAgent      String?
+  ipAddress      String?
+  
+  // Timestamps
+  createdAt      DateTime @default(now())
+
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  user           User         @relation(fields: [userId], references: [id])
+  
+  @@map("api_usage")
+}
+
+// Content Templates
+model Template {
+  id             String   @id @default(cuid())
+  name           String
+  description    String?
+  
+  // Template content
+  structure      String   // template with placeholders
+  variables      String[] // list of variables in template
+  
+  // Categorization
+  platform       String   // instagram, facebook, all, etc.
+  category       String   // promotional, educational, entertaining, etc.
+  industry       String?  // tech, fashion, food, etc.
+  
+  // Usage tracking
+  popularityScore Int     @default(0)
+  usageCount     Int      @default(0)
+  
+  // Metadata
+  isPublic       Boolean  @default(true)
+  createdBy      String?  // user ID if user-created
+  
+  // Timestamps
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  @@map("templates")
+}
+
+// Webhook Events (for integrations)
+model WebhookEvent {
+  id             String   @id @default(cuid())
+  organizationId String
+  
+  // Event details
+  eventType      String   // caption.generated, analytics.updated, etc.
+  payload        Json     // event data
+  
+  // Delivery tracking
+  url            String   // webhook URL
+  status         String   @default("pending") // pending, delivered, failed
+  attempts       Int      @default(0)
+  lastAttemptAt  DateTime?
+  nextRetryAt    DateTime?
+  
+  // Response tracking
+  responseStatus Int?     // HTTP status code
+  responseBody   String?  // response from webhook endpoint
+  
+  // Timestamps
+  createdAt      DateTime @default(now())
+  
+  @@map("webhook_events")
+}
+
+// Indexes for performance
+// These are handled by Prisma migrations
