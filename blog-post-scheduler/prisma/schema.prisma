@@ -1,0 +1,378 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User Management
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  image         String?
+  emailVerified DateTime?
+  password      String?
+  role          UserRole  @default(USER)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relationships
+  accounts      Account[]
+  sessions      Session[]
+  organizations OrganizationMember[]
+  posts         Post[]
+  comments      Comment[]
+  activities    Activity[]
+  integrations  Integration[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// Organization and Team Management
+model Organization {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  description String?
+  plan        Plan     @default(STARTER)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  members       OrganizationMember[]
+  posts         Post[]
+  integrations  Integration[]
+  workflows     Workflow[]
+  templates     Template[]
+
+  @@map("organizations")
+}
+
+model OrganizationMember {
+  id             String         @id @default(cuid())
+  userId         String
+  organizationId String
+  role           OrganizationRole @default(MEMBER)
+  joinedAt       DateTime       @default(now())
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@map("organization_members")
+}
+
+// Content Management
+model Post {
+  id             String      @id @default(cuid())
+  title          String
+  content        String      @db.Text
+  excerpt        String?
+  slug           String?
+  featuredImage  String?
+  seoTitle       String?
+  seoDescription String?
+  tags           String[]
+  categories     String[]
+  status         PostStatus  @default(DRAFT)
+  publishedAt    DateTime?
+  scheduledFor   DateTime?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  // Relationships
+  authorId       String
+  organizationId String?
+  workflowId     String?
+
+  author       User          @relation(fields: [authorId], references: [id])
+  organization Organization? @relation(fields: [organizationId], references: [id])
+  workflow     Workflow?     @relation(fields: [workflowId], references: [id])
+
+  schedules     Schedule[]
+  comments      Comment[]
+  activities    Activity[]
+  versions      PostVersion[]
+  analytics     Analytics[]
+
+  @@map("posts")
+}
+
+model PostVersion {
+  id        String   @id @default(cuid())
+  postId    String
+  content   String   @db.Text
+  title     String
+  version   Int
+  createdAt DateTime @default(now())
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, version])
+  @@map("post_versions")
+}
+
+model Schedule {
+  id            String         @id @default(cuid())
+  postId        String
+  integrationId String
+  scheduledFor  DateTime
+  timezone      String         @default("UTC")
+  status        ScheduleStatus @default(PENDING)
+  publishedAt   DateTime?
+  error         String?
+  retryCount    Int            @default(0)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  post        Post        @relation(fields: [postId], references: [id], onDelete: Cascade)
+  integration Integration @relation(fields: [integrationId], references: [id])
+
+  @@map("schedules")
+}
+
+// Platform Integrations
+model Integration {
+  id             String            @id @default(cuid())
+  name           String
+  platform       Platform
+  config         Json // Platform-specific configuration
+  credentials    Json // Encrypted credentials
+  isActive       Boolean           @default(true)
+  lastSyncAt     DateTime?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  userId         String
+  organizationId String?
+
+  user         User          @relation(fields: [userId], references: [id])
+  organization Organization? @relation(fields: [organizationId], references: [id])
+
+  schedules Schedule[]
+  analytics Analytics[]
+
+  @@map("integrations")
+}
+
+// Editorial Workflow
+model Workflow {
+  id             String   @id @default(cuid())
+  name           String
+  description    String?
+  steps          Json     // Array of workflow steps
+  isDefault      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  posts Post[]
+
+  @@map("workflows")
+}
+
+model Comment {
+  id        String      @id @default(cuid())
+  content   String      @db.Text
+  type      CommentType @default(COMMENT)
+  status    CommentStatus @default(PENDING)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  postId   String
+  authorId String
+  parentId String?
+
+  post   Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author User     @relation(fields: [authorId], references: [id])
+  parent Comment? @relation("CommentReplies", fields: [parentId], references: [id])
+  replies Comment[] @relation("CommentReplies")
+
+  @@map("comments")
+}
+
+// Templates and Content Library
+model Template {
+  id          String       @id @default(cuid())
+  name        String
+  description String?
+  content     String       @db.Text
+  type        TemplateType
+  tags        String[]
+  isPublic    Boolean      @default(false)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  @@map("templates")
+}
+
+// Analytics and Performance
+model Analytics {
+  id             String   @id @default(cuid())
+  postId         String
+  integrationId  String
+  views          Int      @default(0)
+  clicks         Int      @default(0)
+  shares         Int      @default(0)
+  comments       Int      @default(0)
+  likes          Int      @default(0)
+  engagementRate Float    @default(0)
+  ctr            Float    @default(0)
+  recordedAt     DateTime @default(now())
+
+  post        Post        @relation(fields: [postId], references: [id], onDelete: Cascade)
+  integration Integration @relation(fields: [integrationId], references: [id])
+
+  @@unique([postId, integrationId, recordedAt])
+  @@map("analytics")
+}
+
+// Activity Log
+model Activity {
+  id          String       @id @default(cuid())
+  type        ActivityType
+  description String
+  metadata    Json?
+  createdAt   DateTime     @default(now())
+
+  userId String?
+  postId String?
+
+  user User? @relation(fields: [userId], references: [id])
+  post Post? @relation(fields: [postId], references: [id])
+
+  @@map("activities")
+}
+
+// Enums
+enum UserRole {
+  USER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum OrganizationRole {
+  OWNER
+  ADMIN
+  EDITOR
+  MEMBER
+  VIEWER
+}
+
+enum Plan {
+  STARTER
+  PROFESSIONAL
+  BUSINESS
+  ENTERPRISE
+}
+
+enum PostStatus {
+  DRAFT
+  SCHEDULED
+  PUBLISHED
+  ARCHIVED
+  DELETED
+}
+
+enum ScheduleStatus {
+  PENDING
+  PROCESSING
+  PUBLISHED
+  FAILED
+  CANCELLED
+}
+
+enum Platform {
+  WORDPRESS
+  MEDIUM
+  DEVTO
+  LINKEDIN
+  HASHNODE
+  GHOST
+  BLOGGER
+  CUSTOM
+}
+
+enum CommentType {
+  COMMENT
+  SUGGESTION
+  APPROVAL_REQUEST
+  REVISION_REQUEST
+}
+
+enum CommentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  RESOLVED
+}
+
+enum TemplateType {
+  POST
+  EMAIL
+  SOCIAL_MEDIA
+  NEWSLETTER
+}
+
+enum ActivityType {
+  POST_CREATED
+  POST_UPDATED
+  POST_PUBLISHED
+  POST_SCHEDULED
+  INTEGRATION_ADDED
+  INTEGRATION_REMOVED
+  USER_INVITED
+  USER_JOINED
+  WORKFLOW_CREATED
+  COMMENT_ADDED
+  TEMPLATE_CREATED
+}

@@ -1,0 +1,75 @@
+version: '3.8'
+
+services:
+  # Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: blog-scheduler-db
+    environment:
+      POSTGRES_DB: blog_scheduler
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis for caching and queues
+  redis:
+    image: redis:7-alpine
+    container_name: blog-scheduler-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Main application
+  app:
+    build: .
+    container_name: blog-scheduler-app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:password@postgres:5432/blog_scheduler
+      - REDIS_URL=redis://redis:6379
+      - NEXTAUTH_URL=http://localhost:3000
+      - NEXTAUTH_SECRET=your-secret-key-here
+    volumes:
+      - ./prisma:/app/prisma
+    restart: unless-stopped
+
+  # Background job processor
+  worker:
+    build: .
+    container_name: blog-scheduler-worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql://postgres:password@postgres:5432/blog_scheduler
+      - REDIS_URL=redis://redis:6379
+    command: ["node", "worker.js"]
+    volumes:
+      - ./prisma:/app/prisma
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
