@@ -1,0 +1,220 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222.2 84% 4.9%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96%;
+    --accent-foreground: 222.2 84% 4.9%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 221.2 83.2% 53.3%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 84% 4.9%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 224.3 76.3% 94.1%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+@layer components {
+  .journey-node {
+    @apply rounded-lg border-2 border-border bg-card p-4 shadow-sm transition-all hover:shadow-md;
+  }
+  
+  .journey-node.active {
+    @apply border-primary bg-primary/5;
+  }
+  
+  .journey-connection {
+    @apply stroke-muted-foreground stroke-2 fill-none;
+  }
+  
+  .journey-connection.active {
+    @apply stroke-primary;
+  }
+  
+  .metric-card {
+    @apply rounded-lg border bg-card p-6 shadow-sm;
+  }
+  
+  .metric-value {
+    @apply text-2xl font-bold;
+  }
+  
+  .metric-label {
+    @apply text-sm text-muted-foreground;
+  }
+  
+  .metric-change {
+    @apply text-sm font-medium;
+  }
+  
+  .metric-change.positive {
+    @apply text-green-600;
+  }
+  
+  .metric-change.negative {
+    @apply text-red-600;
+  }
+}
+
+@layer utilities {
+  .journey-grid {
+    background-image: 
+      linear-gradient(rgba(0, 0, 0, 0.1) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0, 0, 0, 0.1) 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+  
+  .dark .journey-grid {
+    background-image: 
+      linear-gradient(rgba(255, 255, 255, 0.1) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.1) 1px, transparent 1px);
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: hsl(var(--muted));
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground));
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--primary));
+}
+
+/* Journey visualization styles */
+.journey-canvas {
+  @apply relative w-full h-full overflow-hidden;
+}
+
+.journey-viewport {
+  @apply relative w-full h-full;
+  cursor: grab;
+}
+
+.journey-viewport:active {
+  cursor: grabbing;
+}
+
+/* D3 specific styles */
+.d3-journey-node {
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.d3-journey-node:hover {
+  transform: scale(1.05);
+}
+
+.d3-journey-link {
+  stroke-dasharray: 5,5;
+  animation: dash 20s linear infinite;
+}
+
+@keyframes dash {
+  to {
+    stroke-dashoffset: -200;
+  }
+}
+
+/* Analytics chart styles */
+.recharts-cartesian-axis-tick-value {
+  @apply text-muted-foreground text-xs;
+}
+
+.recharts-legend-wrapper {
+  @apply text-sm;
+}
+
+/* Loading animations */
+@keyframes pulse-soft {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.animate-pulse-soft {
+  animation: pulse-soft 2s ease-in-out infinite;
+}
+
+/* Journey builder styles */
+.journey-builder-canvas {
+  @apply bg-muted/10;
+  background-image: radial-gradient(circle, hsl(var(--muted-foreground)) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+.journey-stage {
+  @apply min-h-[200px] rounded-lg border-2 border-dashed border-muted-foreground/20 p-4;
+}
+
+.journey-stage.drag-over {
+  @apply border-primary border-solid bg-primary/5;
+}
+
+.touchpoint-card {
+  @apply cursor-move rounded-md border bg-card p-3 shadow-sm transition-all;
+}
+
+.touchpoint-card:hover {
+  @apply shadow-md;
+}
+
+.touchpoint-card.dragging {
+  @apply opacity-50;
+}

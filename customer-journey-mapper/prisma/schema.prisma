@@ -1,0 +1,309 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  role          UserRole  @default(USER)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts      Account[]
+  sessions      Session[]
+  organizations OrganizationUser[]
+
+  @@map("users")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+enum UserRole {
+  USER
+  ADMIN
+  OWNER
+}
+
+model Organization {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  industry    String?
+  timezone    String   @default("UTC")
+  website     String?
+  description String?
+  logo        String?
+  plan        Plan     @default(STARTER)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users     OrganizationUser[]
+  journeys  Journey[]
+  customers Customer[]
+  events    Event[]
+
+  @@map("organizations")
+}
+
+enum Plan {
+  STARTER
+  GROWTH
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+model OrganizationUser {
+  id     String @id @default(cuid())
+  userId String
+  orgId  String
+  role   OrgRole
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, orgId])
+  @@map("organization_users")
+}
+
+enum OrgRole {
+  MEMBER
+  ADMIN
+  OWNER
+}
+
+model Journey {
+  id          String   @id @default(cuid())
+  orgId       String
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  stages      Json     // Array of journey stages
+  goals       Json?    // Conversion goals and metrics
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  organization Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  touchpoints  Touchpoint[]
+  events       Event[]
+  paths        JourneyPath[]
+  insights     Insight[]
+
+  @@map("journeys")
+}
+
+model Touchpoint {
+  id          String          @id @default(cuid())
+  journeyId   String
+  name        String
+  channel     Channel
+  stage       String
+  position    Int
+  isOptional  Boolean         @default(false)
+  metadata    Json?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  journey Journey @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  events  Event[]
+
+  @@map("touchpoints")
+}
+
+enum Channel {
+  WEBSITE
+  EMAIL
+  MOBILE_APP
+  SOCIAL_MEDIA
+  PHONE
+  SMS
+  CHAT
+  OFFLINE
+  OTHER
+}
+
+model Customer {
+  id          String    @id @default(cuid())
+  orgId       String
+  externalId  String?   // Customer ID in external system
+  email       String?
+  attributes  Json?     // Custom customer attributes
+  firstSeen   DateTime  @default(now())
+  lastSeen    DateTime  @default(now())
+  isAnonymous Boolean   @default(true)
+  sessionId   String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  organization Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  events       Event[]
+  paths        JourneyPath[]
+
+  @@unique([orgId, externalId])
+  @@map("customers")
+}
+
+model Event {
+  id           String     @id @default(cuid())
+  customerId   String
+  orgId        String
+  journeyId    String?
+  touchpointId String?
+  eventType    EventType
+  eventName    String
+  properties   Json?
+  sessionId    String?
+  timestamp    DateTime   @default(now())
+  source       String?    // Source of the event (web, mobile, api)
+  userAgent    String?
+  ipAddress    String?
+  
+  customer     Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  journey      Journey?     @relation(fields: [journeyId], references: [id], onDelete: SetNull)
+  touchpoint   Touchpoint?  @relation(fields: [touchpointId], references: [id], onDelete: SetNull)
+
+  @@index([customerId, timestamp])
+  @@index([orgId, eventType, timestamp])
+  @@index([journeyId, timestamp])
+  @@map("events")
+}
+
+enum EventType {
+  PAGE_VIEW
+  CLICK
+  FORM_SUBMIT
+  PURCHASE
+  SIGN_UP
+  LOGIN
+  DOWNLOAD
+  VIDEO_PLAY
+  EMAIL_OPEN
+  EMAIL_CLICK
+  CUSTOM
+}
+
+model JourneyPath {
+  id               String            @id @default(cuid())
+  customerId       String
+  journeyId        String
+  pathData         Json              // Sequence of touchpoints/events
+  completionStatus CompletionStatus
+  duration         Int?              // Duration in seconds
+  conversionValue  Float?
+  startedAt        DateTime
+  completedAt      DateTime?
+  createdAt        DateTime          @default(now())
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  journey  Journey  @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+
+  @@index([journeyId, completionStatus])
+  @@map("journey_paths")
+}
+
+enum CompletionStatus {
+  IN_PROGRESS
+  COMPLETED
+  ABANDONED
+  CONVERTED
+}
+
+model Insight {
+  id          String      @id @default(cuid())
+  journeyId   String
+  type        InsightType
+  title       String
+  description String
+  impactScore Float       @default(0)
+  isActioned  Boolean     @default(false)
+  metadata    Json?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  journey Journey @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+
+  @@map("insights")
+}
+
+enum InsightType {
+  BOTTLENECK
+  DROP_OFF
+  OPTIMIZATION
+  ANOMALY
+  TREND
+  PREDICTION
+}
+
+model Integration {
+  id          String           @id @default(cuid())
+  orgId       String
+  name        String
+  type        IntegrationType
+  config      Json             // Integration-specific configuration
+  isActive    Boolean          @default(true)
+  lastSyncAt  DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@unique([orgId, type, name])
+  @@map("integrations")
+}
+
+enum IntegrationType {
+  GOOGLE_ANALYTICS
+  SEGMENT
+  MIXPANEL
+  AMPLITUDE
+  HUBSPOT
+  SALESFORCE
+  STRIPE
+  MAILCHIMP
+  INTERCOM
+  SLACK
+  WEBHOOK
+  CUSTOM_API
+}
