@@ -1,0 +1,521 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions", "fullTextSearch", "views"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  directUrl  = env("DIRECT_URL")
+  extensions = [pgcrypto, vector]
+}
+
+// Enums
+enum UserRole {
+  USER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum SubscriptionTier {
+  FREE
+  CREATOR
+  PROFESSIONAL
+  AGENCY
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  INACTIVE
+  CANCELED
+  PAST_DUE
+}
+
+enum SocialPlatform {
+  INSTAGRAM
+  FACEBOOK
+  TWITTER
+  LINKEDIN
+  TIKTOK
+  YOUTUBE
+  PINTEREST
+}
+
+enum ContentType {
+  IMAGE
+  VIDEO
+  CAROUSEL
+  TEXT
+  STORY
+  REEL
+}
+
+enum CaptionStatus {
+  DRAFT
+  APPROVED
+  PUBLISHED
+  ARCHIVED
+}
+
+enum TeamRole {
+  OWNER
+  ADMIN
+  EDITOR
+  VIEWER
+}
+
+enum NotificationType {
+  CREDIT_LOW
+  SUBSCRIPTION_EXPIRED
+  TEAM_INVITATION
+  GENERATION_COMPLETE
+  SYSTEM_UPDATE
+}
+
+// Core Models
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  image     String?
+  role      UserRole @default(USER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Authentication
+  emailVerified DateTime?
+  accounts      Account[]
+  sessions      Session[]
+
+  // Subscription
+  subscription   Subscription?
+  subscriptionId String?       @unique
+
+  // Usage tracking
+  creditBalance     Int     @default(20) // Free tier starts with 20 credits
+  totalCreditsUsed  Int     @default(0)
+  lastActivityAt    DateTime?
+  
+  // Preferences
+  preferences       Json?
+  timezone          String  @default("UTC")
+  language          String  @default("en")
+  
+  // Relationships
+  organizations     OrganizationMember[]
+  brandVoices       BrandVoice[]
+  captions          Caption[]
+  generations       Generation[]
+  notifications     Notification[]
+  apiKeys           ApiKey[]
+  auditLogs         AuditLog[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// Subscription Management
+model Subscription {
+  id                     String             @id @default(cuid())
+  userId                 String             @unique
+  stripeCustomerId       String             @unique
+  stripeSubscriptionId   String?            @unique
+  stripePriceId          String?
+  tier                   SubscriptionTier   @default(FREE)
+  status                 SubscriptionStatus @default(ACTIVE)
+  creditsPerMonth        Int                @default(20)
+  currentPeriodStart     DateTime?
+  currentPeriodEnd       DateTime?
+  cancelAtPeriodEnd      Boolean            @default(false)
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+// Organization (Multi-tenancy)
+model Organization {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  description String?
+  image       String?
+  website     String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Settings
+  settings          Json?
+  brandingEnabled   Boolean @default(false)
+  apiAccessEnabled  Boolean @default(false)
+  
+  // Relationships
+  members           OrganizationMember[]
+  brandVoices       BrandVoice[]
+  captions          Caption[]
+  generations       Generation[]
+  apiKeys           ApiKey[]
+  auditLogs         AuditLog[]
+
+  @@map("organizations")
+}
+
+model OrganizationMember {
+  id             String   @id @default(cuid())
+  userId         String
+  organizationId String
+  role           TeamRole @default(VIEWER)
+  invitedBy      String?
+  joinedAt       DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@map("organization_members")
+}
+
+// Brand Voice & AI Training
+model BrandVoice {
+  id             String  @id @default(cuid())
+  name           String
+  description    String?
+  userId         String
+  organizationId String?
+  
+  // Voice characteristics
+  tone           String[]    // ["professional", "casual", "humorous"]
+  personality    String[]    // ["friendly", "authoritative", "creative"]
+  vocabulary     String[]    // Custom vocabulary preferences
+  avoidWords     String[]    // Words to avoid
+  
+  // Training data
+  examples       String[]    // Sample captions in this voice
+  guidelines     String?     // Written guidelines
+  
+  // Vector embeddings for semantic matching
+  embedding      Unsupported("vector(1536)")? // OpenAI ada-002 embeddings
+  
+  // Usage tracking
+  isDefault      Boolean  @default(false)
+  usageCount     Int      @default(0)
+  lastUsedAt     DateTime?
+  
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  captions     Caption[]
+
+  @@map("brand_voices")
+}
+
+// Caption Generation
+model Caption {
+  id             String        @id @default(cuid())
+  userId         String
+  organizationId String?
+  brandVoiceId   String?
+  
+  // Content details
+  platform       SocialPlatform
+  contentType     ContentType   @default(IMAGE)
+  status          CaptionStatus @default(DRAFT)
+  
+  // Generated content
+  text           String        @db.Text
+  hashtags       String[]
+  mentions       String[]
+  emojis         String[]
+  
+  // Metadata
+  wordCount      Int
+  characterCount Int
+  readability    Float?        // Readability score
+  sentiment      String?       // positive, negative, neutral
+  
+  // Performance data
+  engagementRate Float?
+  likesCount     Int?
+  commentsCount  Int?
+  sharesCount    Int?
+  
+  // Associated data
+  imageUrl       String?
+  imageAnalysis  Json?         // Google Vision API results
+  generationId   String?       // Link to generation session
+  
+  // AI metrics
+  aiProvider     String?       // openai, anthropic, google
+  aiModel        String?       // gpt-4, claude-3, gemini-pro
+  confidenceScore Float?
+  
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  publishedAt    DateTime?
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  brandVoice   BrandVoice?   @relation(fields: [brandVoiceId], references: [id], onDelete: SetNull)
+  generation   Generation?   @relation(fields: [generationId], references: [id], onDelete: SetNull)
+  analytics    CaptionAnalytics[]
+
+  @@index([platform])
+  @@index([status])
+  @@index([userId, createdAt])
+  @@map("captions")
+}
+
+// Generation Sessions (for batch operations and tracking)
+model Generation {
+  id             String   @id @default(cuid())
+  userId         String
+  organizationId String?
+  
+  // Session details
+  sessionName    String?
+  prompt         String   @db.Text
+  imageUrl       String?
+  platforms      SocialPlatform[]
+  contentType    ContentType      @default(IMAGE)
+  
+  // AI configuration
+  aiProvider     String           // openai, anthropic, google
+  aiModel        String           // gpt-4, claude-3, gemini-pro
+  temperature    Float            @default(0.7)
+  maxTokens      Int              @default(300)
+  
+  // Results
+  totalCaptions  Int              @default(0)
+  successCount   Int              @default(0)
+  errorCount     Int              @default(0)
+  processingTime Int?             // milliseconds
+  cost           Float            @default(0.0)
+  
+  // Status tracking
+  status         String           @default("pending") // pending, processing, completed, failed
+  startedAt      DateTime         @default(now())
+  completedAt    DateTime?
+  
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  captions     Caption[]
+
+  @@map("generations")
+}
+
+// Analytics & Performance Tracking
+model CaptionAnalytics {
+  id               String   @id @default(cuid())
+  captionId        String
+  
+  // Performance metrics
+  impressions      Int      @default(0)
+  likes            Int      @default(0)
+  comments         Int      @default(0)
+  shares           Int      @default(0)
+  clicks           Int      @default(0)
+  saves            Int      @default(0)
+  
+  // Calculated metrics
+  engagementRate   Float    @default(0.0)
+  ctr              Float    @default(0.0) // Click-through rate
+  viralityScore    Float    @default(0.0)
+  
+  // Time-based data
+  recordedAt       DateTime @default(now())
+  platform         SocialPlatform
+  
+  caption Caption @relation(fields: [captionId], references: [id], onDelete: Cascade)
+
+  @@unique([captionId, recordedAt, platform])
+  @@map("caption_analytics")
+}
+
+// Notification System
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  message   String           @db.Text
+  data      Json?            // Additional notification data
+  read      Boolean          @default(false)
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read])
+  @@map("notifications")
+}
+
+// API Management
+model ApiKey {
+  id             String   @id @default(cuid())
+  name           String
+  key            String   @unique
+  userId         String
+  organizationId String?
+  
+  // Permissions
+  permissions    String[] // ["generate", "list", "analytics"]
+  rateLimit      Int      @default(100) // requests per hour
+  
+  // Usage tracking
+  requestCount   Int      @default(0)
+  lastUsedAt     DateTime?
+  
+  // Status
+  isActive       Boolean  @default(true)
+  expiresAt      DateTime?
+  
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("api_keys")
+}
+
+// Audit Logging
+model AuditLog {
+  id             String   @id @default(cuid())
+  userId         String?
+  organizationId String?
+  
+  // Event details
+  action         String   // "create_caption", "update_brand_voice", etc.
+  resource       String   // "caption", "brand_voice", etc.
+  resourceId     String?
+  
+  // Context
+  metadata       Json?    // Additional event data
+  ipAddress      String?
+  userAgent      String?
+  
+  createdAt      DateTime @default(now())
+
+  user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([organizationId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// Platform Templates (for consistent generation patterns)
+model PlatformTemplate {
+  id           String         @id @default(cuid())
+  name         String
+  platform     SocialPlatform
+  contentType  ContentType    @default(IMAGE)
+  
+  // Template structure
+  structure    String         @db.Text // Template with placeholders
+  variables    String[]       // Available variables
+  examples     String[]       // Example outputs
+  
+  // Constraints
+  maxLength    Int?
+  minLength    Int?
+  requiresHashtags Boolean     @default(false)
+  maxHashtags  Int?
+  
+  // Usage tracking
+  usageCount   Int            @default(0)
+  rating       Float?         // User ratings
+  
+  isActive     Boolean        @default(true)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  @@index([platform, contentType])
+  @@map("platform_templates")
+}
+
+// Trending Topics & Hashtags
+model TrendingTopic {
+  id          String         @id @default(cuid())
+  platform    SocialPlatform
+  topic       String
+  hashtag     String?
+  volume      Int            // Search/usage volume
+  sentiment   String?        // positive, negative, neutral
+  category    String?        // business, lifestyle, tech, etc.
+  
+  // Time relevance
+  trendingAt  DateTime       @default(now())
+  expiresAt   DateTime?
+  
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([platform, trendingAt])
+  @@index([category])
+  @@map("trending_topics")
+}
+
+// System Configuration
+model SystemConfig {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       Json
+  description String?
+  updatedBy   String?
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+
+  @@map("system_config")
+}
