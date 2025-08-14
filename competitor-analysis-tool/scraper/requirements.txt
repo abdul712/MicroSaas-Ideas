@@ -1,0 +1,85 @@
+# FastAPI and server
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-multipart==0.0.6
+
+# Database and ORM
+asyncpg==0.29.0
+databases[postgresql]==0.8.0
+sqlalchemy==2.0.23
+alembic==1.13.1
+
+# Redis for caching and queues
+redis==5.0.1
+aioredis==2.0.1
+
+# Web scraping
+playwright==1.40.0
+beautifulsoup4==4.12.2
+lxml==4.9.3
+selectolax==0.3.17
+requests==2.31.0
+aiohttp==3.9.1
+httpx==0.25.2
+
+# HTML parsing and content extraction
+trafilatura==1.7.0
+newspaper3k==0.2.8
+readability-lxml==0.8.1
+python-dateutil==2.8.2
+
+# Text processing and NLP
+nltk==3.8.1
+textblob==0.17.1
+spacy==3.7.2
+transformers==4.36.0
+sentence-transformers==2.2.2
+
+# Image processing
+Pillow==10.1.0
+opencv-python==4.8.1.78
+
+# Data processing
+pandas==2.1.4
+numpy==1.25.2
+scikit-learn==1.3.2
+
+# Async and concurrency
+asyncio==3.4.3
+aiofiles==23.2.1
+celery==5.3.4
+
+# Security and validation
+pydantic==2.5.1
+pydantic-settings==2.1.0
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# Monitoring and logging
+structlog==23.2.0
+rich==13.7.0
+sentry-sdk[fastapi]==1.38.0
+
+# Environment and configuration
+python-dotenv==1.0.0
+
+# Social media APIs
+tweepy==4.14.0
+facebook-sdk==3.1.0
+linkedin-api==2.2.0
+
+# SEO and web analysis
+advertools==0.14.1
+robots-txt-parser==1.2.2
+
+# Testing
+pytest==7.4.3
+pytest-asyncio==0.21.1
+httpx==0.25.2
+factory-boy==3.3.0
+
+# Development
+black==23.11.0
+flake8==6.1.0
+mypy==1.7.1
+pre-commit==3.6.0
