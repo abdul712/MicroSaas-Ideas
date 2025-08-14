@@ -1,0 +1,444 @@
+// Team Communication Hub - Enterprise Database Schema
+// Optimized for high-performance messaging with multi-tenancy
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User Authentication and Profile
+model User {
+  id          String   @id @default(cuid())
+  email       String   @unique
+  username    String   @unique
+  displayName String?
+  avatarUrl   String?
+  status      UserStatus @default(OFFLINE)
+  lastActiveAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Authentication
+  accounts    Account[]
+  sessions    Session[]
+
+  // Team relationships
+  teamMembers TeamMember[]
+  
+  // Communication
+  sentMessages     Message[]
+  reactions       MessageReaction[]
+  channelMembers  ChannelMember[]
+  
+  // Activity tracking
+  presenceUpdates PresenceUpdate[]
+  activityLogs    ActivityLog[]
+
+  @@map("users")
+}
+
+// NextAuth.js Account model
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+// NextAuth.js Session model
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+// Team/Organization entity for multi-tenancy
+model Team {
+  id          String   @id @default(cuid())
+  name        String
+  subdomain   String   @unique
+  domain      String?  // Custom domain for enterprise
+  description String?
+  logoUrl     String?
+  plan        PlanType @default(FREE)
+  maxMembers  Int      @default(5)
+  settings    Json     @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relationships
+  members     TeamMember[]
+  channels    Channel[]
+  messages    Message[]
+  invitations TeamInvitation[]
+  
+  // File storage
+  files       File[]
+  
+  // Billing and usage
+  subscription Subscription?
+  usage       TeamUsage[]
+
+  @@map("teams")
+}
+
+// Team membership with roles
+model TeamMember {
+  id       String     @id @default(cuid())
+  teamId   String
+  userId   String
+  role     TeamRole   @default(MEMBER)
+  status   MemberStatus @default(ACTIVE)
+  joinedAt DateTime   @default(now())
+  
+  team     Team       @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user     User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@map("team_members")
+}
+
+// Team invitations
+model TeamInvitation {
+  id        String            @id @default(cuid())
+  teamId    String
+  email     String
+  role      TeamRole          @default(MEMBER)
+  status    InvitationStatus  @default(PENDING)
+  token     String            @unique
+  expiresAt DateTime
+  createdAt DateTime          @default(now())
+  
+  team      Team              @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, email])
+  @@map("team_invitations")
+}
+
+// Communication channels
+model Channel {
+  id          String      @id @default(cuid())
+  teamId      String
+  name        String
+  description String?
+  type        ChannelType @default(PUBLIC)
+  topic       String?
+  isArchived  Boolean     @default(false)
+  createdBy   String
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  team        Team          @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  members     ChannelMember[]
+  messages    Message[]
+  threads     Thread[]
+
+  @@unique([teamId, name])
+  @@index([teamId, type])
+  @@map("channels")
+}
+
+// Channel membership
+model ChannelMember {
+  id         String   @id @default(cuid())
+  channelId  String
+  userId     String
+  role       ChannelRole @default(MEMBER)
+  joinedAt   DateTime @default(now())
+  lastReadAt DateTime @default(now())
+  
+  channel    Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, userId])
+  @@map("channel_members")
+}
+
+// Messages - core communication entity
+model Message {
+  id          String      @id @default(cuid())
+  teamId      String
+  channelId   String
+  threadId    String?
+  senderId    String
+  content     String      @db.Text
+  type        MessageType @default(TEXT)
+  isEdited    Boolean     @default(false)
+  editedAt    DateTime?
+  isDeleted   Boolean     @default(false)
+  deletedAt   DateTime?
+  metadata    Json?       // For storing additional message data
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  team        Team              @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  channel     Channel           @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  sender      User              @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  thread      Thread?           @relation(fields: [threadId], references: [id], onDelete: SetNull)
+  
+  // Message interactions
+  reactions   MessageReaction[]
+  attachments MessageAttachment[]
+  mentions    MessageMention[]
+
+  @@index([channelId, createdAt(sort: Desc)])
+  @@index([senderId, createdAt(sort: Desc)])
+  @@index([teamId, createdAt(sort: Desc)])
+  @@index([threadId])
+  @@map("messages")
+}
+
+// Message threads for organized conversations
+model Thread {
+  id          String   @id @default(cuid())
+  channelId   String
+  parentMessageId String? // First message that started the thread
+  title       String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  channel     Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  messages    Message[]
+
+  @@index([channelId])
+  @@map("threads")
+}
+
+// Message reactions (emoji responses)
+model MessageReaction {
+  id        String   @id @default(cuid())
+  messageId String
+  userId    String
+  emoji     String
+  createdAt DateTime @default(now())
+
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId, emoji])
+  @@map("message_reactions")
+}
+
+// File attachments
+model MessageAttachment {
+  id        String   @id @default(cuid())
+  messageId String
+  fileId    String
+  createdAt DateTime @default(now())
+
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  file      File     @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@map("message_attachments")
+}
+
+// User mentions in messages
+model MessageMention {
+  id        String   @id @default(cuid())
+  messageId String
+  userId    String
+  createdAt DateTime @default(now())
+
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId])
+  @@map("message_mentions")
+}
+
+// File storage and management
+model File {
+  id           String   @id @default(cuid())
+  teamId       String
+  uploadedBy   String
+  filename     String
+  originalName String
+  mimeType     String
+  size         Int
+  url          String
+  thumbnailUrl String?
+  metadata     Json?
+  isPublic     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  team         Team                @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  attachments  MessageAttachment[]
+
+  @@index([teamId])
+  @@map("files")
+}
+
+// Real-time presence tracking
+model PresenceUpdate {
+  id        String      @id @default(cuid())
+  userId    String
+  status    UserStatus
+  activity  String?     // "Typing in #general", "In a call", etc.
+  timestamp DateTime    @default(now())
+
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, timestamp(sort: Desc)])
+  @@map("presence_updates")
+}
+
+// Activity logging for audit and analytics
+model ActivityLog {
+  id          String       @id @default(cuid())
+  userId      String?
+  teamId      String?
+  action      ActivityType
+  resourceType String      // "message", "channel", "user", etc.
+  resourceId  String?
+  metadata    Json?
+  ipAddress   String?
+  userAgent   String?
+  timestamp   DateTime     @default(now())
+
+  user        User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([teamId, timestamp(sort: Desc)])
+  @@index([userId, timestamp(sort: Desc)])
+  @@map("activity_logs")
+}
+
+// Subscription and billing
+model Subscription {
+  id                String            @id @default(cuid())
+  teamId            String            @unique
+  plan              PlanType
+  status            SubscriptionStatus
+  stripeCustomerId  String?
+  stripeSubscriptionId String?
+  currentPeriodStart DateTime
+  currentPeriodEnd  DateTime
+  cancelAtPeriodEnd Boolean           @default(false)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  team              Team              @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+// Usage tracking for billing and analytics
+model TeamUsage {
+  id          String   @id @default(cuid())
+  teamId      String
+  date        DateTime @db.Date
+  
+  // Usage metrics
+  messageCount     Int @default(0)
+  activeUsers      Int @default(0)
+  storageUsed      BigInt @default(0) // bytes
+  apiCalls         Int @default(0)
+  
+  createdAt   DateTime @default(now())
+
+  team        Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, date])
+  @@map("team_usage")
+}
+
+// Enums
+enum UserStatus {
+  ONLINE
+  AWAY
+  BUSY
+  OFFLINE
+}
+
+enum PlanType {
+  FREE
+  STARTER
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+enum TeamRole {
+  OWNER
+  ADMIN
+  MEMBER
+  GUEST
+}
+
+enum MemberStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REVOKED
+}
+
+enum ChannelType {
+  PUBLIC
+  PRIVATE
+  DIRECT
+  ANNOUNCEMENT
+}
+
+enum ChannelRole {
+  ADMIN
+  MEMBER
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  FILE
+  SYSTEM
+  AI_RESPONSE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  INCOMPLETE
+  INCOMPLETE_EXPIRED
+  TRIALING
+  UNPAID
+}
+
+enum ActivityType {
+  USER_LOGIN
+  USER_LOGOUT
+  MESSAGE_SENT
+  MESSAGE_EDITED
+  MESSAGE_DELETED
+  CHANNEL_CREATED
+  CHANNEL_UPDATED
+  CHANNEL_DELETED
+  USER_INVITED
+  USER_JOINED
+  USER_LEFT
+  FILE_UPLOADED
+  TEAM_SETTINGS_UPDATED
+}
