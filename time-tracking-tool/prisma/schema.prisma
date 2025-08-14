@@ -1,0 +1,460 @@
+// Time Tracking Tool Database Schema
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User Management
+model User {
+  id               String   @id @default(cuid())
+  email            String   @unique
+  name             String?
+  avatar           String?
+  timezone         String   @default("UTC")
+  role             UserRole @default(USER)
+  isActive         Boolean  @default(true)
+  emailVerified    DateTime?
+  hashedPassword   String?
+  mfaEnabled       Boolean  @default(false)
+  mfaSecret        String?
+  settings         Json?
+  lastActiveAt     DateTime?
+  onboardingComplete Boolean @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Relationships
+  accounts         Account[]
+  sessions         Session[]
+  ownedWorkspaces  Workspace[] @relation("WorkspaceOwner")
+  workspaceMembers WorkspaceMember[]
+  timeEntries      TimeEntry[]
+  projects         Project[]
+  clients          Client[]
+  invoices         Invoice[]
+  rates            Rate[]
+  activities       Activity[]
+  notifications    Notification[]
+  auditLogs        AuditLog[]
+
+  @@map("users")
+}
+
+// Authentication
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// Workspace & Team Management
+model Workspace {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  description String?
+  avatar      String?
+  ownerId     String
+  settings    Json?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  owner       User              @relation("WorkspaceOwner", fields: [ownerId], references: [id])
+  members     WorkspaceMember[]
+  clients     Client[]
+  projects    Project[]
+  timeEntries TimeEntry[]
+  invoices    Invoice[]
+  rates       Rate[]
+  integrations Integration[]
+
+  @@map("workspaces")
+}
+
+model WorkspaceMember {
+  id          String      @id @default(cuid())
+  workspaceId String
+  userId      String
+  role        MemberRole  @default(MEMBER)
+  status      MemberStatus @default(ACTIVE)
+  permissions Json?
+  joinedAt    DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@map("workspace_members")
+}
+
+// Client Management
+model Client {
+  id          String   @id @default(cuid())
+  name        String
+  email       String?
+  phone       String?
+  address     String?
+  website     String?
+  notes       String?
+  defaultRate Decimal? @db.Decimal(10, 2)
+  currency    String   @default("USD")
+  status      ClientStatus @default(ACTIVE)
+  
+  userId      String
+  workspaceId String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user      User      @relation(fields: [userId], references: [id])
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+  projects  Project[]
+  invoices  Invoice[]
+
+  @@map("clients")
+}
+
+// Project Management
+model Project {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  color       String   @default("#3B82F6")
+  status      ProjectStatus @default(ACTIVE)
+  budget      Decimal? @db.Decimal(12, 2)
+  hourlyRate  Decimal? @db.Decimal(10, 2)
+  currency    String   @default("USD")
+  estimatedHours Decimal? @db.Decimal(8, 2)
+  startDate   DateTime?
+  endDate     DateTime?
+  
+  clientId    String?
+  userId      String
+  workspaceId String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  client      Client?     @relation(fields: [clientId], references: [id])
+  user        User        @relation(fields: [userId], references: [id])
+  workspace   Workspace   @relation(fields: [workspaceId], references: [id])
+  timeEntries TimeEntry[]
+  tasks       Task[]
+  rates       Rate[]
+
+  @@map("projects")
+}
+
+// Task Management
+model Task {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  status      TaskStatus @default(TODO)
+  priority    TaskPriority @default(MEDIUM)
+  estimatedHours Decimal? @db.Decimal(8, 2)
+  actualHours    Decimal? @db.Decimal(8, 2)
+  dueDate     DateTime?
+  completedAt DateTime?
+  
+  projectId   String
+  assigneeId  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project     Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assignee    User?       @relation(fields: [assigneeId], references: [id])
+  timeEntries TimeEntry[]
+
+  @@map("tasks")
+}
+
+// Time Tracking
+model TimeEntry {
+  id          String   @id @default(cuid())
+  description String?
+  startTime   DateTime
+  endTime     DateTime?
+  duration    Int?     // Duration in seconds
+  isBillable  Boolean  @default(true)
+  isApproved  Boolean  @default(false)
+  approvedBy  String?
+  approvedAt  DateTime?
+  
+  userId      String
+  projectId   String
+  taskId      String?
+  workspaceId String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User       @relation(fields: [userId], references: [id])
+  project     Project    @relation(fields: [projectId], references: [id])
+  task        Task?      @relation(fields: [taskId], references: [id])
+  workspace   Workspace  @relation(fields: [workspaceId], references: [id])
+  activities  Activity[]
+
+  @@map("time_entries")
+}
+
+// Activity Monitoring
+model Activity {
+  id          String   @id @default(cuid())
+  appName     String?
+  windowTitle String?
+  url         String?
+  category    String?
+  productivity ActivityProductivity @default(NEUTRAL)
+  timestamp   DateTime
+  duration    Int      // Duration in seconds
+  
+  timeEntryId String
+  userId      String
+  createdAt   DateTime @default(now())
+
+  timeEntry TimeEntry @relation(fields: [timeEntryId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id])
+
+  @@map("activities")
+}
+
+// Rate Management
+model Rate {
+  id          String   @id @default(cuid())
+  rate        Decimal  @db.Decimal(10, 2)
+  currency    String   @default("USD")
+  type        RateType @default(HOURLY)
+  effectiveDate DateTime @default(now())
+  isActive    Boolean  @default(true)
+  
+  userId      String
+  workspaceId String
+  projectId   String?
+  clientId    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user      User       @relation(fields: [userId], references: [id])
+  workspace Workspace  @relation(fields: [workspaceId], references: [id])
+  project   Project?   @relation(fields: [projectId], references: [id])
+
+  @@map("rates")
+}
+
+// Billing & Invoicing
+model Invoice {
+  id          String   @id @default(cuid())
+  number      String   @unique
+  title       String?
+  notes       String?
+  status      InvoiceStatus @default(DRAFT)
+  subtotal    Decimal  @db.Decimal(12, 2)
+  taxRate     Decimal? @db.Decimal(5, 2)
+  taxAmount   Decimal? @db.Decimal(12, 2)
+  total       Decimal  @db.Decimal(12, 2)
+  currency    String   @default("USD")
+  dueDate     DateTime
+  issueDate   DateTime @default(now())
+  paidAt      DateTime?
+  
+  clientId    String
+  userId      String
+  workspaceId String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  client     Client         @relation(fields: [clientId], references: [id])
+  user       User           @relation(fields: [userId], references: [id])
+  workspace  Workspace      @relation(fields: [workspaceId], references: [id])
+  lineItems  InvoiceLineItem[]
+
+  @@map("invoices")
+}
+
+model InvoiceLineItem {
+  id          String   @id @default(cuid())
+  description String
+  quantity    Decimal  @db.Decimal(8, 2)
+  rate        Decimal  @db.Decimal(10, 2)
+  amount      Decimal  @db.Decimal(12, 2)
+  
+  invoiceId   String
+  createdAt   DateTime @default(now())
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@map("invoice_line_items")
+}
+
+// Integrations
+model Integration {
+  id          String   @id @default(cuid())
+  name        String
+  type        IntegrationType
+  config      Json
+  isActive    Boolean  @default(true)
+  lastSyncAt  DateTime?
+  
+  workspaceId String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+
+  @@map("integrations")
+}
+
+// Notifications
+model Notification {
+  id        String   @id @default(cuid())
+  title     String
+  message   String
+  type      NotificationType @default(INFO)
+  isRead    Boolean  @default(false)
+  data      Json?
+  
+  userId    String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("notifications")
+}
+
+// Audit Logs
+model AuditLog {
+  id        String   @id @default(cuid())
+  action    String
+  entity    String
+  entityId  String
+  changes   Json?
+  ipAddress String?
+  userAgent String?
+  
+  userId    String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("audit_logs")
+}
+
+// Enums
+enum UserRole {
+  ADMIN
+  USER
+}
+
+enum MemberRole {
+  ADMIN
+  MANAGER
+  MEMBER
+  VIEWER
+}
+
+enum MemberStatus {
+  ACTIVE
+  INACTIVE
+  PENDING
+}
+
+enum ClientStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
+enum ProjectStatus {
+  ACTIVE
+  COMPLETED
+  PAUSED
+  CANCELLED
+  ARCHIVED
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  IN_REVIEW
+  COMPLETED
+  CANCELLED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum ActivityProductivity {
+  PRODUCTIVE
+  NEUTRAL
+  UNPRODUCTIVE
+}
+
+enum RateType {
+  HOURLY
+  FIXED
+  DAILY
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+enum IntegrationType {
+  PROJECT_MANAGEMENT
+  ACCOUNTING
+  CALENDAR
+  COMMUNICATION
+  VERSION_CONTROL
+}
+
+enum NotificationType {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+}
