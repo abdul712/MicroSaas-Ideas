@@ -1,0 +1,341 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  domain    String   @unique
+  plan      String   @default("basic") // basic, professional, enterprise
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users       User[]
+  teams       Team[]
+  extensions  Extension[]
+  callHistory CallHistory[]
+  voicemails  Voicemail[]
+  recordings  CallRecording[]
+  settings    OrganizationSettings?
+
+  @@map("organizations")
+}
+
+model OrganizationSettings {
+  id             String @id @default(cuid())
+  organizationId String @unique
+  
+  // Business hours
+  businessHours  Json   // { monday: { start: "09:00", end: "17:00", enabled: true }, ... }
+  timezone       String @default("UTC")
+  
+  // Call routing
+  autoAttendant  Json?  // Auto-attendant configuration
+  callForwarding Json?  // Default forwarding rules
+  
+  // Features
+  recordingEnabled Boolean @default(false)
+  voicemailEnabled Boolean @default(true)
+  
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("organization_settings")
+}
+
+model User {
+  id             String    @id @default(cuid())
+  email          String    @unique
+  name           String
+  password       String
+  role           String    @default("user") // admin, manager, user
+  organizationId String
+  
+  // Profile
+  avatar         String?
+  phone          String?
+  department     String?
+  jobTitle       String?
+  
+  // Status
+  isActive       Boolean   @default(true)
+  lastActiveAt   DateTime  @default(now())
+  presenceStatus String    @default("offline") // online, offline, busy, away
+  
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  teamMembers    TeamMember[]
+  extensions     Extension[]
+  callHistory    CallHistory[]
+  voicemails     Voicemail[]
+  notifications  Notification[]
+  sessions       UserSession[]
+
+  @@map("users")
+}
+
+model UserSession {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_sessions")
+}
+
+model Team {
+  id             String @id @default(cuid())
+  name           String
+  description    String?
+  organizationId String
+  
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  members        TeamMember[]
+  extensions     Extension[]
+
+  @@map("teams")
+}
+
+model TeamMember {
+  id     String @id @default(cuid())
+  userId String
+  teamId String
+  role   String @default("member") // leader, member
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, teamId])
+  @@map("team_members")
+}
+
+model Extension {
+  id             String  @id @default(cuid())
+  number         String  // Extension number (e.g., "1001")
+  name           String  // Display name
+  organizationId String
+  userId         String?
+  teamId         String?
+  
+  // Configuration
+  type           String  @default("user") // user, team, auto_attendant, voicemail
+  isActive       Boolean @default(true)
+  
+  // Call routing
+  forwardingRules Json?  // Complex forwarding rules
+  voicemailEnabled Boolean @default(true)
+  
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  team           Team?         @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  callHistory    CallHistory[]
+  voicemails     Voicemail[]
+
+  @@unique([organizationId, number])
+  @@map("extensions")
+}
+
+model CallHistory {
+  id             String   @id @default(cuid())
+  organizationId String
+  
+  // Call details
+  callId         String   @unique // Unique identifier for the call session
+  direction      String   // inbound, outbound, internal
+  status         String   // completed, missed, busy, failed, ongoing
+  
+  // Participants
+  fromNumber     String
+  toNumber       String
+  fromExtension  String?
+  toExtension    String?
+  
+  // User references
+  callerId       String?  // User who initiated the call
+  receiverId     String?  // User who received the call
+  
+  // Timing
+  startedAt      DateTime
+  answeredAt     DateTime?
+  endedAt        DateTime?
+  duration       Int?     // Duration in seconds
+  
+  // Call data
+  callType       String   @default("voice") // voice, video, conference
+  quality        Json?    // Call quality metrics
+  transferredFrom String? // If call was transferred
+  
+  // Metadata
+  userAgent      String?
+  ipAddress      String?
+  
+  createdAt      DateTime @default(now())
+
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  caller         User?           @relation(fields: [callerId], references: [id], onDelete: SetNull)
+  fromExt        Extension?      @relation(fields: [fromExtension], references: [number])
+  recordings     CallRecording[]
+
+  @@index([organizationId, startedAt])
+  @@index([callerId])
+  @@index([status])
+  @@map("call_history")
+}
+
+model CallRecording {
+  id             String   @id @default(cuid())
+  callHistoryId  String
+  organizationId String
+  
+  // File details
+  fileName       String
+  fileUrl        String
+  fileSize       Int      // Size in bytes
+  duration       Int      // Duration in seconds
+  format         String   @default("mp3")
+  
+  // Metadata
+  startTime      DateTime
+  endTime        DateTime
+  
+  createdAt      DateTime @default(now())
+
+  callHistory    CallHistory  @relation(fields: [callHistoryId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("call_recordings")
+}
+
+model Voicemail {
+  id             String   @id @default(cuid())
+  organizationId String
+  extensionId    String
+  userId         String?
+  
+  // Caller info
+  fromNumber     String
+  fromName       String?
+  
+  // Message details
+  fileName       String
+  fileUrl        String
+  fileSize       Int      // Size in bytes
+  duration       Int      // Duration in seconds
+  
+  // Status
+  isRead         Boolean  @default(false)
+  transcription  String?  // AI-generated transcription
+  
+  // Timestamps
+  receivedAt     DateTime
+  readAt         DateTime?
+  createdAt      DateTime @default(now())
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  extension      Extension    @relation(fields: [extensionId], references: [id], onDelete: Cascade)
+  user           User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, isRead])
+  @@index([userId, isRead])
+  @@map("voicemails")
+}
+
+model Notification {
+  id      String @id @default(cuid())
+  userId  String
+  
+  type    String // missed_call, voicemail, system_alert, etc.
+  title   String
+  message String
+  data    Json?  // Additional notification data
+  
+  isRead  Boolean  @default(false)
+  readAt  DateTime?
+  
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@map("notifications")
+}
+
+model CallQueue {
+  id             String @id @default(cuid())
+  name           String
+  organizationId String
+  
+  // Queue settings
+  maxWaitTime    Int      @default(300) // Maximum wait time in seconds
+  maxCallers     Int      @default(10)  // Maximum callers in queue
+  
+  // Routing
+  strategy       String   @default("round_robin") // round_robin, longest_idle, random
+  members        Json     // Array of extension IDs
+  
+  // Status
+  isActive       Boolean  @default(true)
+  
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([organizationId, name])
+  @@map("call_queues")
+}
+
+model Conference {
+  id             String   @id @default(cuid())
+  organizationId String
+  
+  name           String
+  pin            String?
+  maxParticipants Int     @default(25)
+  
+  // Status
+  isActive       Boolean  @default(false)
+  
+  // Timing
+  scheduledAt    DateTime?
+  startedAt      DateTime?
+  endedAt        DateTime?
+  
+  createdAt      DateTime @default(now())
+
+  participants   ConferenceParticipant[]
+
+  @@map("conferences")
+}
+
+model ConferenceParticipant {
+  id           String @id @default(cuid())
+  conferenceId String
+  
+  // Participant info
+  name         String
+  number       String
+  extension    String?
+  
+  // Status
+  joinedAt     DateTime
+  leftAt       DateTime?
+  isMuted      Boolean  @default(false)
+  
+  conference   Conference @relation(fields: [conferenceId], references: [id], onDelete: Cascade)
+
+  @@map("conference_participants")
+}
