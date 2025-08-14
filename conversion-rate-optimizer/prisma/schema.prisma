@@ -1,0 +1,633 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User and authentication models
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  image         String?
+  role          UserRole  @default(USER)
+  isActive      Boolean   @default(true)
+  emailVerified DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relationships
+  accounts      Account[]
+  sessions      Session[]
+  organizations OrganizationMember[]
+  projects      Project[]
+  experiments   Experiment[]
+  insights      Insight[]
+  activities    Activity[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// Organization and subscription models
+model Organization {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  description String?
+  logo        String?
+  domain      String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relationships
+  members      OrganizationMember[]
+  projects     Project[]
+  subscription Subscription?
+
+  @@map("organizations")
+}
+
+model OrganizationMember {
+  id             String              @id @default(cuid())
+  organizationId String
+  userId         String
+  role           OrganizationRole    @default(MEMBER)
+  permissions    OrganizationPermission[]
+  joinedAt       DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@map("organization_members")
+}
+
+model Subscription {
+  id               String            @id @default(cuid())
+  organizationId   String            @unique
+  stripeCustomerId String?           @unique
+  stripePriceId    String?
+  stripeCurrentPeriodEnd DateTime?
+  plan             SubscriptionPlan  @default(FREE)
+  status           SubscriptionStatus @default(ACTIVE)
+  trialEndsAt      DateTime?
+  canceledAt       DateTime?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+// Project and tracking models
+model Project {
+  id             String      @id @default(cuid())
+  name           String
+  domain         String
+  trackingId     String      @unique @default(cuid())
+  description    String?
+  industry       Industry?
+  monthlyTraffic Int?
+  timezone       String      @default("UTC")
+  isActive       Boolean     @default(true)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  // Ownership
+  userId         String
+  organizationId String?
+
+  // Relationships
+  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization   Organization?     @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  funnels        Funnel[]
+  experiments    Experiment[]
+  events         Event[]
+  sessions       UserSession[]
+  goals          Goal[]
+  insights       Insight[]
+  heatmaps       Heatmap[]
+  recordings     SessionRecording[]
+  integrations   Integration[]
+
+  @@map("projects")
+}
+
+model Funnel {
+  id          String      @id @default(cuid())
+  projectId   String
+  name        String
+  description String?
+  steps       Json        // Array of funnel steps with URLs and events
+  goalType    GoalType
+  goalValue   Decimal?    @db.Decimal(12, 2)
+  isActive    Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  project     Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  experiments Experiment[]
+  insights    Insight[]
+
+  @@map("funnels")
+}
+
+// Event tracking models
+model Event {
+  id         String   @id @default(cuid())
+  projectId  String
+  sessionId  String
+  userId     String?
+  eventType  String
+  eventName  String?
+  pageUrl    String
+  referrer   String?
+  properties Json?
+  timestamp  DateTime @default(now())
+  createdAt  DateTime @default(now())
+
+  // Performance and technical data
+  loadTime     Int?
+  scrollDepth  Float?
+  clickX       Int?
+  clickY       Int?
+  elementPath  String?
+  userAgent    String?
+  ipAddress    String?
+  country      String?
+  city         String?
+
+  // Experiment context
+  experimentId String?
+  variantId    String?
+
+  project    Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  session    UserSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  experiment Experiment?  @relation(fields: [experimentId], references: [id], onDelete: SetNull)
+  variant    Variant?     @relation(fields: [variantId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, timestamp])
+  @@index([sessionId, timestamp])
+  @@index([eventType, timestamp])
+  @@index([experimentId, variantId])
+  @@map("events")
+}
+
+model UserSession {
+  id              String   @id @default(cuid())
+  projectId       String
+  sessionHash     String   // Anonymized session identifier
+  startTime       DateTime @default(now())
+  endTime         DateTime?
+  duration        Int?     // Duration in seconds
+  pageViews       Int      @default(0)
+  isConverted     Boolean  @default(false)
+  conversionValue Decimal? @db.Decimal(12, 2)
+
+  // User characteristics (anonymized)
+  deviceType      String?
+  browserFamily   String?
+  osFamily        String?
+  country         String?
+  city            String?
+  referrerDomain  String?
+  utmSource       String?
+  utmMedium       String?
+  utmCampaign     String?
+
+  // Behavior metrics
+  bounceRate      Float?
+  avgTimeOnPage   Float?
+  scrollDepthAvg  Float?
+  clickCount      Int      @default(0)
+  formSubmissions Int      @default(0)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  events  Event[]
+
+  @@unique([projectId, sessionHash])
+  @@index([projectId, startTime])
+  @@index([isConverted, startTime])
+  @@map("user_sessions")
+}
+
+// A/B Testing models
+model Experiment {
+  id                String           @id @default(cuid())
+  projectId         String
+  funnelId          String?
+  name              String
+  hypothesis        String?
+  description       String?
+  type              ExperimentType   @default(AB_TEST)
+  status            ExperimentStatus @default(DRAFT)
+  trafficAllocation Json             // Traffic split configuration
+  targetUrl         String?
+  targetSelector    String?
+  
+  // Statistical settings
+  confidenceLevel   Float            @default(0.95)
+  minimumDetectable Float            @default(0.05) // 5% minimum detectable effect
+  statisticalMethod StatisticalMethod @default(FREQUENTIST)
+
+  // Timing
+  startedAt         DateTime?
+  endedAt           DateTime?
+  scheduledStart    DateTime?
+  scheduledEnd      DateTime?
+  
+  // Results
+  isSignificant     Boolean          @default(false)
+  winnerVariantId   String?
+  pValue            Float?
+  confidenceInterval Json?
+
+  // Metadata
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  userId            String
+
+  // Relationships
+  project           Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  funnel            Funnel?          @relation(fields: [funnelId], references: [id], onDelete: SetNull)
+  user              User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  variants          Variant[]
+  events            Event[]
+  insights          Insight[]
+
+  @@map("experiments")
+}
+
+model Variant {
+  id                String   @id @default(cuid())
+  experimentId      String
+  name              String
+  description       String?
+  isControl         Boolean  @default(false)
+  trafficPercentage Float    @default(50.0)
+  changes           Json     // DOM modifications, CSS changes, etc.
+  
+  // Performance metrics
+  visitors          Int      @default(0)
+  conversions       Int      @default(0)
+  conversionRate    Float    @default(0.0)
+  revenue           Decimal  @default(0.0) @db.Decimal(12, 2)
+  
+  // Statistical data
+  isWinner          Boolean  @default(false)
+  significance      Float?
+  liftPercent       Float?
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  experiment        Experiment @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  events            Event[]
+
+  @@map("variants")
+}
+
+// Analytics and insights models
+model Goal {
+  id          String   @id @default(cuid())
+  projectId   String
+  name        String
+  description String?
+  type        GoalType
+  value       Decimal? @db.Decimal(12, 2)
+  selector    String?  // CSS selector for element-based goals
+  url         String?  // URL pattern for page-based goals
+  event       String?  // Event name for event-based goals
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("goals")
+}
+
+model Insight {
+  id                String       @id @default(cuid())
+  projectId         String
+  funnelId          String?
+  experimentId      String?
+  type              InsightType
+  title             String
+  description       String
+  potentialImpact   Float?       // Estimated percentage improvement
+  priority          Priority     @default(MEDIUM)
+  status            InsightStatus @default(PENDING)
+  category          InsightCategory
+  
+  // AI-generated data
+  confidence        Float?       // AI confidence score
+  evidenceStrength  Float?       // Supporting evidence strength
+  recommendations   Json?        // Specific recommendations
+  
+  // Implementation tracking
+  implementedAt     DateTime?
+  actualImpact      Float?       // Measured improvement after implementation
+  
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  userId            String
+
+  project           Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  funnel            Funnel?      @relation(fields: [funnelId], references: [id], onDelete: SetNull)
+  experiment        Experiment?  @relation(fields: [experimentId], references: [id], onDelete: SetNull)
+  user              User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("insights")
+}
+
+// Heatmaps and user recordings
+model Heatmap {
+  id           String      @id @default(cuid())
+  projectId    String
+  pageUrl      String
+  type         HeatmapType @default(CLICK)
+  data         Json        // Heatmap data points
+  deviceType   String?
+  dateRange    Json        // Start and end dates
+  sessionCount Int         @default(0)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, pageUrl])
+  @@map("heatmaps")
+}
+
+model SessionRecording {
+  id          String   @id @default(cuid())
+  projectId   String
+  sessionId   String
+  duration    Int      // Duration in seconds
+  pageViews   Int      @default(0)
+  events      Json     // Recorded events and interactions
+  isConverted Boolean  @default(false)
+  deviceType  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, isConverted])
+  @@map("session_recordings")
+}
+
+// Integrations and external services
+model Integration {
+  id           String           @id @default(cuid())
+  projectId    String
+  type         IntegrationType
+  name         String
+  config       Json             // Integration-specific configuration
+  credentials  Json?            // Encrypted credentials
+  isActive     Boolean          @default(true)
+  lastSyncAt   DateTime?
+  syncStatus   SyncStatus       @default(PENDING)
+  errorMessage String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("integrations")
+}
+
+// Activity and audit logs
+model Activity {
+  id          String       @id @default(cuid())
+  userId      String
+  action      ActivityType
+  resourceType String      // Type of resource (project, experiment, etc.)
+  resourceId  String?      // ID of the affected resource
+  details     Json?        // Additional activity details
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime     @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([resourceType, resourceId])
+  @@map("activities")
+}
+
+// Enums
+enum UserRole {
+  USER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum OrganizationRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+enum OrganizationPermission {
+  CREATE_PROJECTS
+  MANAGE_PROJECTS
+  CREATE_EXPERIMENTS
+  MANAGE_EXPERIMENTS
+  VIEW_ANALYTICS
+  MANAGE_INTEGRATIONS
+  MANAGE_MEMBERS
+  MANAGE_BILLING
+}
+
+enum SubscriptionPlan {
+  FREE
+  STARTER
+  GROWTH
+  SCALE
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELED
+  PAST_DUE
+  INCOMPLETE
+  INCOMPLETE_EXPIRED
+  TRIALING
+  UNPAID
+}
+
+enum Industry {
+  ECOMMERCE
+  SAAS
+  EDUCATION
+  HEALTHCARE
+  FINANCE
+  REAL_ESTATE
+  TRAVEL
+  MEDIA
+  OTHER
+}
+
+enum GoalType {
+  PURCHASE
+  SIGNUP
+  LEAD
+  PAGEVIEW
+  CUSTOM_EVENT
+  TIME_ON_PAGE
+  SCROLL_DEPTH
+}
+
+enum ExperimentType {
+  AB_TEST
+  MULTIVARIATE
+  REDIRECT
+  FEATURE_FLAG
+}
+
+enum ExperimentStatus {
+  DRAFT
+  SCHEDULED
+  RUNNING
+  PAUSED
+  COMPLETED
+  ARCHIVED
+}
+
+enum StatisticalMethod {
+  FREQUENTIST
+  BAYESIAN
+  SEQUENTIAL
+}
+
+enum InsightType {
+  BOTTLENECK
+  OPPORTUNITY
+  RECOMMENDATION
+  ALERT
+  TREND
+}
+
+enum InsightStatus {
+  PENDING
+  ACKNOWLEDGED
+  IN_PROGRESS
+  IMPLEMENTED
+  DISMISSED
+}
+
+enum InsightCategory {
+  CONVERSION_FUNNEL
+  USER_EXPERIENCE
+  TECHNICAL_PERFORMANCE
+  CONTENT_OPTIMIZATION
+  MOBILE_OPTIMIZATION
+  FORM_OPTIMIZATION
+  CHECKOUT_OPTIMIZATION
+  PERSONALIZATION
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum HeatmapType {
+  CLICK
+  SCROLL
+  MOVE
+  ATTENTION
+}
+
+enum IntegrationType {
+  GOOGLE_ANALYTICS
+  GOOGLE_TAG_MANAGER
+  SHOPIFY
+  WOOCOMMERCE
+  STRIPE
+  HUBSPOT
+  SALESFORCE
+  MAILCHIMP
+  KLAVIYO
+  SEGMENT
+  WEBHOOK
+}
+
+enum SyncStatus {
+  PENDING
+  SYNCING
+  SUCCESS
+  ERROR
+}
+
+enum ActivityType {
+  PROJECT_CREATED
+  PROJECT_UPDATED
+  PROJECT_DELETED
+  EXPERIMENT_CREATED
+  EXPERIMENT_STARTED
+  EXPERIMENT_PAUSED
+  EXPERIMENT_COMPLETED
+  EXPERIMENT_DELETED
+  INSIGHT_CREATED
+  INSIGHT_IMPLEMENTED
+  INTEGRATION_ADDED
+  INTEGRATION_REMOVED
+  USER_INVITED
+  USER_REMOVED
+  SETTINGS_UPDATED
+}
