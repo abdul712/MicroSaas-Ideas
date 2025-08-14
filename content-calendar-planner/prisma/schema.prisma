@@ -1,0 +1,452 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Organization/Workspace model for multi-tenancy
+model Organization {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  planType    PlanType @default(STARTER)
+  seatsLimit  Int      @default(1)
+  isActive    Boolean  @default(true)
+  settings    Json?    @default("{}")
+  timezone    String   @default("UTC")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  users           User[]
+  calendars       Calendar[]
+  platformAccounts PlatformAccount[]
+  contentItems    ContentItem[]
+  teams           Team[]
+  subscriptions   Subscription[]
+
+  @@map("organizations")
+}
+
+model Subscription {
+  id             String           @id @default(cuid())
+  organizationId String
+  planType       PlanType
+  status         SubscriptionStatus @default(ACTIVE)
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  cancelAtPeriodEnd  Boolean      @default(false)
+  stripeCustomerId   String?
+  stripeSubscriptionId String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+model User {
+  id             String    @id @default(cuid())
+  email          String    @unique
+  name           String
+  avatar         String?
+  role           UserRole  @default(MEMBER)
+  permissions    Json?     @default("[]")
+  timezone       String    @default("UTC")
+  isActive       Boolean   @default(true)
+  lastLoginAt    DateTime?
+  emailVerified  DateTime?
+  organizationId String
+  teamId         String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team         Team?        @relation(fields: [teamId], references: [id])
+  createdContent ContentItem[] @relation("ContentCreator")
+  assignedContent ContentItem[] @relation("ContentAssignee")
+  comments     Comment[]
+  activities   Activity[]
+  sessions     Session[]
+
+  @@map("users")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model Team {
+  id             String @id @default(cuid())
+  name           String
+  description    String?
+  color          String @default("#3B82F6")
+  organizationId String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  members      User[]
+  calendars    Calendar[]
+
+  @@map("teams")
+}
+
+model Calendar {
+  id             String   @id @default(cuid())
+  name           String
+  description    String?
+  color          String   @default("#3B82F6")
+  isDefault      Boolean  @default(false)
+  isPublic       Boolean  @default(false)
+  settings       Json?    @default("{}")
+  organizationId String
+  teamId         String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team         Team?        @relation(fields: [teamId], references: [id])
+  contentItems ContentItem[]
+
+  @@map("calendars")
+}
+
+model ContentItem {
+  id             String      @id @default(cuid())
+  title          String
+  description    String?
+  contentType    ContentType @default(POST)
+  status         ContentStatus @default(DRAFT)
+  priority       Priority    @default(MEDIUM)
+  
+  // Content data
+  content        Json?       // Rich content with text, media, etc.
+  platforms      Platform[]  // Target platforms
+  tags           String[]    // Content tags
+  hashtags       String[]    // Social media hashtags
+  
+  // Scheduling
+  dueDate        DateTime?
+  publishDate    DateTime?
+  publishedAt    DateTime?
+  timezone       String      @default("UTC")
+  
+  // Relationships
+  organizationId String
+  calendarId     String
+  createdById    String
+  assignedToId   String?
+  
+  // Metadata
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  // Relations
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  calendar       Calendar         @relation(fields: [calendarId], references: [id], onDelete: Cascade)
+  createdBy      User             @relation("ContentCreator", fields: [createdById], references: [id])
+  assignedTo     User?            @relation("ContentAssignee", fields: [assignedToId], references: [id])
+  
+  versions       ContentVersion[]
+  comments       Comment[]
+  publishingJobs PublishingJob[]
+  analytics      Analytics[]
+  mediaAssets    MediaAsset[]
+  activities     Activity[]
+
+  @@map("content_items")
+}
+
+model ContentVersion {
+  id            String      @id @default(cuid())
+  contentItemId String
+  versionNumber Int
+  contentData   Json        // Full content snapshot
+  changeLog     String?     // Description of changes
+  createdById   String
+  createdAt     DateTime    @default(now())
+
+  contentItem ContentItem @relation(fields: [contentItemId], references: [id], onDelete: Cascade)
+
+  @@unique([contentItemId, versionNumber])
+  @@map("content_versions")
+}
+
+model PlatformAccount {
+  id             String    @id @default(cuid())
+  platform       Platform
+  accountName    String
+  accountId      String    // Platform-specific account ID
+  username       String?   // Display username
+  isActive       Boolean   @default(true)
+  
+  // Encrypted credentials
+  accessToken    String?   // Encrypted
+  refreshToken   String?   // Encrypted
+  tokenExpiresAt DateTime?
+  
+  // Platform-specific settings
+  settings       Json?     @default("{}")
+  permissions    String[]  // Granted permissions
+  
+  organizationId String
+  connectedAt    DateTime  @default(now())
+  lastSyncAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  publishingJobs PublishingJob[]
+  analytics      Analytics[]
+
+  @@unique([organizationId, platform, accountId])
+  @@map("platform_accounts")
+}
+
+model PublishingJob {
+  id                String       @id @default(cuid())
+  contentItemId     String
+  platformAccountId String
+  
+  scheduledTime     DateTime
+  status            JobStatus    @default(PENDING)
+  priority          Int          @default(5)
+  retryCount        Int          @default(0)
+  maxRetries        Int          @default(3)
+  
+  // Platform-specific data
+  platformData      Json?        // Platform-specific content format
+  platformResponse  Json?        // Response from platform API
+  
+  // Error handling
+  errorMessage      String?
+  lastAttemptAt     DateTime?
+  nextRetryAt       DateTime?
+  
+  publishedAt       DateTime?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  contentItem     ContentItem     @relation(fields: [contentItemId], references: [id], onDelete: Cascade)
+  platformAccount PlatformAccount @relation(fields: [platformAccountId], references: [id], onDelete: Cascade)
+
+  @@map("publishing_jobs")
+}
+
+model MediaAsset {
+  id            String    @id @default(cuid())
+  filename      String
+  originalName  String
+  fileSize      Int
+  mimeType      String
+  width         Int?      // For images/videos
+  height        Int?      // For images/videos
+  duration      Float?    // For videos/audio in seconds
+  
+  // Storage information
+  storageKey    String    // S3 key or similar
+  url           String    // Public URL
+  thumbnailUrl  String?   // Thumbnail URL
+  
+  // Organization
+  organizationId String
+  uploadedById   String
+  
+  // Metadata
+  altText       String?   // Accessibility
+  description   String?
+  tags          String[]
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  contentItems  ContentItem[]
+
+  @@map("media_assets")
+}
+
+model Comment {
+  id            String      @id @default(cuid())
+  contentItemId String
+  userId        String
+  text          String
+  mentions      String[]    // User IDs mentioned in comment
+  isResolved    Boolean     @default(false)
+  parentId      String?     // For threaded comments
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  contentItem ContentItem @relation(fields: [contentItemId], references: [id], onDelete: Cascade)
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent      Comment?    @relation("CommentReplies", fields: [parentId], references: [id])
+  replies     Comment[]   @relation("CommentReplies")
+
+  @@map("comments")
+}
+
+model Activity {
+  id             String       @id @default(cuid())
+  type           ActivityType
+  description    String
+  metadata       Json?        // Additional activity data
+  
+  organizationId String
+  userId         String?      // User who performed the action
+  contentItemId  String?      // Related content item
+  
+  createdAt      DateTime     @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User?        @relation(fields: [userId], references: [id])
+  contentItem  ContentItem? @relation(fields: [contentItemId], references: [id])
+
+  @@map("activities")
+}
+
+model Analytics {
+  id                String      @id @default(cuid())
+  contentItemId     String
+  platformAccountId String
+  platform          Platform
+  
+  // Metrics
+  impressions       Int         @default(0)
+  reach             Int         @default(0)
+  engagements       Int         @default(0)
+  likes             Int         @default(0)
+  comments          Int         @default(0)
+  shares            Int         @default(0)
+  saves             Int         @default(0)
+  clicks            Int         @default(0)
+  
+  // Additional platform-specific metrics
+  customMetrics     Json?       @default("{}")
+  
+  recordedAt        DateTime    @default(now())
+  createdAt         DateTime    @default(now())
+
+  contentItem     ContentItem     @relation(fields: [contentItemId], references: [id], onDelete: Cascade)
+  platformAccount PlatformAccount @relation(fields: [platformAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([contentItemId, platformAccountId, recordedAt])
+  @@map("analytics")
+}
+
+model Webhook {
+  id           String      @id @default(cuid())
+  url          String
+  events       String[]    // Event types to listen for
+  secret       String      // For signature verification
+  isActive     Boolean     @default(true)
+  
+  organizationId String
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@map("webhooks")
+}
+
+// Enums
+enum PlanType {
+  STARTER
+  TEAM
+  BUSINESS
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  INACTIVE
+  CANCELLED
+  PAST_DUE
+}
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  MEMBER
+  VIEWER
+}
+
+enum ContentType {
+  POST
+  STORY
+  REEL
+  VIDEO
+  ARTICLE
+  EVENT
+  POLL
+  CAROUSEL
+}
+
+enum ContentStatus {
+  IDEA
+  DRAFT
+  IN_REVIEW
+  APPROVED
+  SCHEDULED
+  PUBLISHED
+  FAILED
+  ARCHIVED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum Platform {
+  FACEBOOK
+  INSTAGRAM
+  TWITTER
+  LINKEDIN
+  TIKTOK
+  YOUTUBE
+  PINTEREST
+  SNAPCHAT
+}
+
+enum JobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+  RETRYING
+}
+
+enum ActivityType {
+  CONTENT_CREATED
+  CONTENT_UPDATED
+  CONTENT_DELETED
+  CONTENT_PUBLISHED
+  CONTENT_SCHEDULED
+  COMMENT_ADDED
+  USER_INVITED
+  USER_REMOVED
+  PLATFORM_CONNECTED
+  PLATFORM_DISCONNECTED
+  CALENDAR_CREATED
+  TEAM_CREATED
+}

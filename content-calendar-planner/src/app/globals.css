@@ -1,0 +1,265 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222.2 84% 4.9%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96%;
+    --accent-foreground: 222.2 84% 4.9%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 221.2 83.2% 53.3%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 84% 4.9%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 224.3 76.3% 94.1%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+@layer components {
+  /* Calendar specific styles */
+  .calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 1px;
+    background: hsl(var(--border));
+  }
+  
+  .calendar-day {
+    @apply bg-background min-h-[120px] p-2 border-0;
+  }
+  
+  .calendar-day.other-month {
+    @apply bg-muted/30 text-muted-foreground;
+  }
+  
+  .calendar-day.today {
+    @apply bg-primary/5 border-primary border-2;
+  }
+  
+  /* Content item styles */
+  .content-item {
+    @apply rounded-lg p-3 mb-2 border border-border bg-card shadow-sm cursor-pointer;
+    transition: all 0.2s ease-in-out;
+  }
+  
+  .content-item:hover {
+    @apply shadow-md scale-[1.02];
+  }
+  
+  .content-item.dragging {
+    @apply opacity-50 scale-95;
+  }
+  
+  /* Platform badge styles */
+  .platform-badge {
+    @apply inline-flex items-center rounded-full px-2 py-1 text-xs font-medium;
+  }
+  
+  .platform-badge.facebook {
+    @apply bg-facebook/10 text-facebook border border-facebook/20;
+  }
+  
+  .platform-badge.instagram {
+    @apply bg-instagram/10 text-instagram border border-instagram/20;
+  }
+  
+  .platform-badge.twitter {
+    @apply bg-twitter/10 text-twitter border border-twitter/20;
+  }
+  
+  .platform-badge.linkedin {
+    @apply bg-linkedin/10 text-linkedin border border-linkedin/20;
+  }
+  
+  .platform-badge.tiktok {
+    @apply bg-tiktok/10 text-tiktok border border-tiktok/20;
+  }
+  
+  .platform-badge.youtube {
+    @apply bg-youtube/10 text-youtube border border-youtube/20;
+  }
+  
+  .platform-badge.pinterest {
+    @apply bg-pinterest/10 text-pinterest border border-pinterest/20;
+  }
+  
+  /* Status badge styles */
+  .status-badge {
+    @apply inline-flex items-center rounded-full px-2 py-1 text-xs font-medium;
+  }
+  
+  .status-badge.draft {
+    @apply bg-gray-100 text-gray-800 border border-gray-200;
+  }
+  
+  .status-badge.in-review {
+    @apply bg-yellow-100 text-yellow-800 border border-yellow-200;
+  }
+  
+  .status-badge.approved {
+    @apply bg-green-100 text-green-800 border border-green-200;
+  }
+  
+  .status-badge.scheduled {
+    @apply bg-blue-100 text-blue-800 border border-blue-200;
+  }
+  
+  .status-badge.published {
+    @apply bg-emerald-100 text-emerald-800 border border-emerald-200;
+  }
+  
+  .status-badge.failed {
+    @apply bg-red-100 text-red-800 border border-red-200;
+  }
+  
+  /* Animation classes */
+  .animate-content-appear {
+    animation: fade-in 0.3s ease-out;
+  }
+  
+  .animate-content-disappear {
+    animation: fade-out 0.2s ease-out;
+  }
+  
+  /* Custom scrollbar */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground)) transparent;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--muted-foreground));
+    border-radius: 3px;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(var(--foreground));
+  }
+  
+  /* Loading spinner */
+  .spinner {
+    animation: spin 1s linear infinite;
+  }
+  
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+  
+  /* Tiptap editor styles */
+  .ProseMirror {
+    @apply focus:outline-none min-h-[100px] p-3 text-sm;
+  }
+  
+  .ProseMirror p {
+    @apply mb-2;
+  }
+  
+  .ProseMirror p:last-child {
+    @apply mb-0;
+  }
+  
+  .ProseMirror strong {
+    @apply font-semibold;
+  }
+  
+  .ProseMirror em {
+    @apply italic;
+  }
+  
+  .ProseMirror a {
+    @apply text-primary underline;
+  }
+  
+  .ProseMirror ul {
+    @apply list-disc pl-6 mb-2;
+  }
+  
+  .ProseMirror ol {
+    @apply list-decimal pl-6 mb-2;
+  }
+  
+  .ProseMirror li {
+    @apply mb-1;
+  }
+  
+  .ProseMirror h1 {
+    @apply text-xl font-bold mb-2;
+  }
+  
+  .ProseMirror h2 {
+    @apply text-lg font-semibold mb-2;
+  }
+  
+  .ProseMirror h3 {
+    @apply text-base font-medium mb-2;
+  }
+  
+  .ProseMirror blockquote {
+    @apply border-l-4 border-muted pl-4 italic mb-2;
+  }
+  
+  .ProseMirror code {
+    @apply bg-muted px-1 py-0.5 rounded text-sm font-mono;
+  }
+  
+  .ProseMirror pre {
+    @apply bg-muted p-3 rounded mb-2 overflow-x-auto;
+  }
+  
+  .ProseMirror pre code {
+    @apply bg-transparent p-0;
+  }
+}
