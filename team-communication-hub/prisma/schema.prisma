@@ -1,0 +1,462 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// NextAuth.js required models
+model Account {
+  id                String  @id @default(cuid())
+  userId            String  @map("user_id")
+  type              String
+  provider          String
+  providerAccountId String  @map("provider_account_id")
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id")
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  username      String?   @unique
+  emailVerified DateTime? @map("email_verified")
+  image         String?
+  bio           String?
+  location      String?
+  website       String?
+  timezone      String?   @default("UTC")
+  
+  // User preferences
+  theme         String?   @default("system") // "light", "dark", "system"
+  language      String?   @default("en")
+  notifications Json?     @default("{\"email\": true, \"push\": true, \"desktop\": true}")
+  
+  // User status and activity
+  status        UserStatus @default(OFFLINE)
+  lastSeen      DateTime?  @map("last_seen")
+  isActive      Boolean    @default(true)
+  
+  // Timestamps
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+
+  // Relations
+  accounts        Account[]
+  sessions        Session[]
+  teamMemberships TeamMember[]
+  sentMessages    Message[]
+  reactions       Reaction[]
+  typingUsers     TypingUser[]
+  
+  // Direct message relations
+  sentDMs    DirectMessage[] @relation("DMSender")
+  receivedDMs DirectMessage[] @relation("DMReceiver")
+  
+  // File uploads
+  uploadedFiles File[]
+
+  @@map("users")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// Core Team Communication Models
+
+model Team {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  description String?
+  avatar      String?
+  subdomain   String?  @unique
+  
+  // Team settings
+  settings    Json?    @default("{\"allowGuestAccess\": false, \"requireApproval\": true, \"maxMembers\": 25}")
+  plan        TeamPlan @default(FREE)
+  
+  // Billing
+  stripeCustomerId       String? @unique @map("stripe_customer_id")
+  stripeSubscriptionId   String? @unique @map("stripe_subscription_id")
+  stripePriceId         String? @map("stripe_price_id")
+  stripeCurrentPeriodEnd DateTime? @map("stripe_current_period_end")
+  
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  members        TeamMember[]
+  channels       Channel[]
+  invitations    TeamInvitation[]
+  directMessages DirectMessage[]
+  files          File[]
+
+  @@map("teams")
+}
+
+model TeamMember {
+  id     String           @id @default(cuid())
+  userId String           @map("user_id")
+  teamId String           @map("team_id")
+  role   TeamMemberRole   @default(MEMBER)
+  status TeamMemberStatus @default(ACTIVE)
+  
+  // Member settings
+  nickname    String?
+  permissions Json?    @default("{}")
+  
+  // Timestamps
+  joinedAt  DateTime @default(now()) @map("joined_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, teamId])
+  @@map("team_members")
+}
+
+model TeamInvitation {
+  id        String              @id @default(cuid())
+  teamId    String              @map("team_id")
+  email     String
+  role      TeamMemberRole      @default(MEMBER)
+  status    TeamInvitationStatus @default(PENDING)
+  token     String              @unique @default(cuid())
+  expiresAt DateTime            @map("expires_at")
+  
+  // Invitation metadata
+  invitedBy String?             @map("invited_by")
+  
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, email])
+  @@map("team_invitations")
+}
+
+model Channel {
+  id          String      @id @default(cuid())
+  name        String
+  description String?
+  teamId      String      @map("team_id")
+  type        ChannelType @default(PUBLIC)
+  
+  // Channel settings
+  isArchived  Boolean @default(false) @map("is_archived")
+  isDefault   Boolean @default(false) @map("is_default")
+  settings    Json?   @default("{\"allowThreads\": true, \"notifyAll\": false}")
+  
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  team     Team      @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  messages Message[]
+  members  ChannelMember[]
+
+  @@unique([teamId, name])
+  @@map("channels")
+}
+
+model ChannelMember {
+  id        String    @id @default(cuid())
+  channelId String    @map("channel_id")
+  userId    String    @map("user_id")
+  role      ChannelRole @default(MEMBER)
+  
+  // Member settings
+  notifications Boolean   @default(true)
+  lastRead      DateTime? @map("last_read")
+  
+  // Timestamps
+  joinedAt DateTime @default(now()) @map("joined_at")
+
+  // Relations
+  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, userId])
+  @@map("channel_members")
+}
+
+model Message {
+  id        String      @id @default(cuid())
+  content   String?
+  channelId String      @map("channel_id")
+  userId    String      @map("user_id")
+  
+  // Message metadata
+  type      MessageType @default(TEXT)
+  metadata  Json?       @default("{}")
+  
+  // Threading
+  parentId  String?     @map("parent_id")
+  threadId  String?     @map("thread_id")
+  
+  // Message state
+  isEdited  Boolean     @default(false) @map("is_edited")
+  isDeleted Boolean     @default(false) @map("is_deleted")
+  isPinned  Boolean     @default(false) @map("is_pinned")
+  
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  editedAt  DateTime? @map("edited_at")
+
+  // Relations
+  channel   Channel     @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent    Message?    @relation("MessageThread", fields: [parentId], references: [id])
+  replies   Message[]   @relation("MessageThread")
+  reactions Reaction[]
+  files     File[]
+
+  @@index([channelId, createdAt])
+  @@index([threadId])
+  @@map("messages")
+}
+
+model DirectMessage {
+  id         String      @id @default(cuid())
+  content    String?
+  senderId   String      @map("sender_id")
+  receiverId String      @map("receiver_id")
+  teamId     String      @map("team_id")
+  
+  // Message metadata
+  type       MessageType @default(TEXT)
+  metadata   Json?       @default("{}")
+  
+  // Message state
+  isEdited   Boolean     @default(false) @map("is_edited")
+  isDeleted  Boolean     @default(false) @map("is_deleted")
+  isRead     Boolean     @default(false) @map("is_read")
+  readAt     DateTime?   @map("read_at")
+  
+  // Timestamps
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  editedAt   DateTime? @map("edited_at")
+
+  // Relations
+  sender   User   @relation("DMSender", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver User   @relation("DMReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  team     Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  files    File[]
+
+  @@index([senderId, receiverId])
+  @@index([teamId, createdAt])
+  @@map("direct_messages")
+}
+
+model Reaction {
+  id        String @id @default(cuid())
+  messageId String @map("message_id")
+  userId    String @map("user_id")
+  emoji     String
+  
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId, emoji])
+  @@map("reactions")
+}
+
+model File {
+  id               String    @id @default(cuid())
+  filename         String
+  originalName     String    @map("original_name")
+  mimeType         String    @map("mime_type")
+  size             Int
+  url              String
+  thumbnailUrl     String?   @map("thumbnail_url")
+  
+  // File metadata
+  width            Int?
+  height           Int?
+  duration         Float?    // For videos/audio in seconds
+  
+  // Associations
+  teamId           String    @map("team_id")
+  uploadedById     String    @map("uploaded_by_id")
+  messageId        String?   @map("message_id")
+  directMessageId  String?   @map("direct_message_id")
+  
+  // File state
+  isPublic         Boolean   @default(false) @map("is_public")
+  
+  // Timestamps
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  team          Team           @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  uploadedBy    User           @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
+  message       Message?       @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  directMessage DirectMessage? @relation(fields: [directMessageId], references: [id], onDelete: SetNull)
+
+  @@map("files")
+}
+
+model TypingUser {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  channelId String   @map("channel_id")
+  
+  // Timestamps
+  startedAt DateTime @default(now()) @map("started_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, channelId])
+  @@map("typing_users")
+}
+
+// Audit and Security Models
+
+model AuditLog {
+  id       String           @id @default(cuid())
+  teamId   String           @map("team_id")
+  userId   String?          @map("user_id")
+  action   AuditLogAction
+  resource String
+  resourceId String?        @map("resource_id")
+  
+  // Event details
+  details  Json?
+  ipAddress String?         @map("ip_address")
+  userAgent String?         @map("user_agent")
+  
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([teamId, createdAt])
+  @@index([userId])
+  @@map("audit_logs")
+}
+
+// Enums
+
+enum UserStatus {
+  ONLINE
+  AWAY
+  BUSY
+  OFFLINE
+}
+
+enum TeamPlan {
+  FREE
+  STARTER
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+enum TeamMemberRole {
+  OWNER
+  ADMIN
+  MEMBER
+  GUEST
+}
+
+enum TeamMemberStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum TeamInvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  CANCELLED
+}
+
+enum ChannelType {
+  PUBLIC
+  PRIVATE
+  DIRECT
+  ANNOUNCEMENT
+}
+
+enum ChannelRole {
+  ADMIN
+  MEMBER
+}
+
+enum MessageType {
+  TEXT
+  FILE
+  IMAGE
+  VIDEO
+  AUDIO
+  SYSTEM
+  CODE
+  POLL
+}
+
+enum AuditLogAction {
+  USER_LOGIN
+  USER_LOGOUT
+  USER_INVITE
+  USER_JOIN
+  USER_LEAVE
+  USER_UPDATE
+  CHANNEL_CREATE
+  CHANNEL_UPDATE
+  CHANNEL_DELETE
+  CHANNEL_ARCHIVE
+  MESSAGE_SEND
+  MESSAGE_EDIT
+  MESSAGE_DELETE
+  FILE_UPLOAD
+  FILE_DELETE
+  TEAM_UPDATE
+  TEAM_DELETE
+  PERMISSION_CHANGE
+}
