@@ -1,0 +1,288 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  avatar        String?
+  password      String
+  phone         String?
+  role          Role      @default(USER)
+  status        UserStatus @default(ACTIVE)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Organization relationship
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+
+  // Call relationships
+  outboundCalls Call[] @relation("Caller")
+  inboundCalls  Call[] @relation("Receiver")
+  
+  // Team relationships
+  teamMemberships TeamMember[]
+  
+  // Extension assignment
+  extension     Extension?
+  
+  // Session tracking
+  sessions      Session[]
+  
+  // Notification preferences
+  notifications NotificationSettings?
+
+  @@map("users")
+}
+
+model Organization {
+  id          String   @id @default(cuid())
+  name        String
+  domain      String?  @unique
+  phone       String?
+  address     String?
+  timezone    String   @default("UTC")
+  settings    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relationships
+  users       User[]
+  teams       Team[]
+  extensions  Extension[]
+  calls       Call[]
+  voicemails  Voicemail[]
+  recordings  CallRecording[]
+  
+  @@map("organizations")
+}
+
+model Team {
+  id             String   @id @default(cuid())
+  name           String
+  description    String?
+  organizationId String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relationships
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  members        TeamMember[]
+  extensions     Extension[]
+
+  @@map("teams")
+}
+
+model TeamMember {
+  id     String   @id @default(cuid())
+  userId String
+  teamId String
+  role   TeamRole @default(MEMBER)
+  
+  // Relationships
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team   Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, teamId])
+  @@map("team_members")
+}
+
+model Extension {
+  id             String      @id @default(cuid())
+  number         String      
+  name           String?
+  type           ExtensionType @default(USER)
+  status         ExtensionStatus @default(AVAILABLE)
+  settings       Json?
+  organizationId String
+  teamId         String?
+  userId         String?     @unique
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  // Relationships
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team           Team?        @relation(fields: [teamId], references: [id])
+  user           User?        @relation(fields: [userId], references: [id])
+  calls          Call[]
+  voicemails     Voicemail[]
+
+  @@unique([organizationId, number])
+  @@map("extensions")
+}
+
+model Call {
+  id             String      @id @default(cuid())
+  callId         String      @unique
+  direction      CallDirection
+  status         CallStatus  @default(RINGING)
+  callType       CallType    @default(VOICE)
+  startTime      DateTime    @default(now())
+  endTime        DateTime?
+  duration       Int?        // in seconds
+  
+  // Phone numbers
+  fromNumber     String
+  toNumber       String
+  
+  // User/Extension relationships
+  callerId       String?
+  receiverId     String?
+  extensionId    String?
+  
+  // Organization
+  organizationId String
+  
+  // Call metadata
+  sipCallId      String?
+  userAgent      String?
+  codec          String?
+  quality        Json?       // Call quality metrics
+  
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  // Relationships
+  caller         User?           @relation("Caller", fields: [callerId], references: [id])
+  receiver       User?           @relation("Receiver", fields: [receiverId], references: [id])
+  extension      Extension?      @relation(fields: [extensionId], references: [id])
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  recording      CallRecording?
+  voicemail      Voicemail?
+
+  @@map("calls")
+}
+
+model CallRecording {
+  id             String   @id @default(cuid())
+  callId         String   @unique
+  fileName       String
+  filePath       String
+  fileSize       Int
+  duration       Int      // in seconds
+  format         String   @default("mp3")
+  organizationId String
+  createdAt      DateTime @default(now())
+
+  // Relationships
+  call           Call         @relation(fields: [callId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("call_recordings")
+}
+
+model Voicemail {
+  id             String    @id @default(cuid())
+  callId         String?   @unique
+  extensionId    String
+  fromNumber     String
+  fromName       String?
+  message        String?   // Transcribed message
+  fileName       String
+  filePath       String
+  fileSize       Int
+  duration       Int       // in seconds
+  isRead         Boolean   @default(false)
+  organizationId String
+  createdAt      DateTime  @default(now())
+
+  // Relationships
+  call           Call?        @relation(fields: [callId], references: [id])
+  extension      Extension    @relation(fields: [extensionId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("voicemails")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  // Relationships
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model NotificationSettings {
+  id                    String  @id @default(cuid())
+  userId                String  @unique
+  emailNotifications    Boolean @default(true)
+  smsNotifications      Boolean @default(false)
+  pushNotifications     Boolean @default(true)
+  missedCallEmail       Boolean @default(true)
+  voicemailEmail        Boolean @default(true)
+  callRecordingEmail    Boolean @default(false)
+  
+  // Relationships
+  user                  User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notification_settings")
+}
+
+// Enums
+enum Role {
+  USER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum TeamRole {
+  MEMBER
+  MANAGER
+  ADMIN
+}
+
+enum ExtensionType {
+  USER
+  QUEUE
+  IVR
+  CONFERENCE
+  VOICEMAIL
+}
+
+enum ExtensionStatus {
+  AVAILABLE
+  BUSY
+  AWAY
+  DO_NOT_DISTURB
+  OFFLINE
+}
+
+enum CallDirection {
+  INBOUND
+  OUTBOUND
+  INTERNAL
+}
+
+enum CallStatus {
+  RINGING
+  ANSWERED
+  BUSY
+  NO_ANSWER
+  FAILED
+  CANCELLED
+  COMPLETED
+}
+
+enum CallType {
+  VOICE
+  VIDEO
+  CONFERENCE
+}
