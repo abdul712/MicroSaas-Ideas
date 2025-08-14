@@ -1,0 +1,139 @@
+{
+  "name": "website-heatmap-tool",
+  "version": "1.0.0",
+  "description": "Enterprise-grade website heatmap and user behavior analytics platform",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "backend/*",
+    "sdk",
+    "tests/*"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "concurrently \"npm run dev:event-collection\" \"npm run dev:analytics\" \"npm run dev:heatmap\" \"npm run dev:user-mgmt\" \"npm run dev:privacy\" \"npm run dev:ai-insights\"",
+    "dev:event-collection": "cd backend/event-collection && npm run dev",
+    "dev:analytics": "cd backend/analytics-processing && npm run dev",
+    "dev:heatmap": "cd backend/heatmap-generation && npm run dev",
+    "dev:user-mgmt": "cd backend/user-management && npm run dev",
+    "dev:privacy": "cd backend/privacy-service && npm run dev",
+    "dev:ai-insights": "cd backend/ai-insights && npm run dev",
+    "build": "npm run build:frontend && npm run build:backend && npm run build:sdk",
+    "build:frontend": "cd frontend && npm run build",
+    "build:backend": "npm run build:services",
+    "build:services": "concurrently \"cd backend/event-collection && npm run build\" \"cd backend/analytics-processing && npm run build\" \"cd backend/heatmap-generation && npm run build\" \"cd backend/user-management && npm run build\" \"cd backend/privacy-service && npm run build\" \"cd backend/ai-insights && npm run build\"",
+    "build:sdk": "cd sdk && npm run build",
+    "test": "npm run test:frontend && npm run test:backend && npm run test:sdk",
+    "test:frontend": "cd frontend && npm test",
+    "test:backend": "npm run test:services",
+    "test:services": "concurrently \"cd backend/event-collection && npm test\" \"cd backend/analytics-processing && npm test\" \"cd backend/heatmap-generation && npm test\" \"cd backend/user-management && npm test\" \"cd backend/privacy-service && npm test\" \"cd backend/ai-insights && npm test\"",
+    "test:sdk": "cd sdk && npm test",
+    "test:integration": "cd tests/integration && npm test",
+    "test:e2e": "cd tests/e2e && npm test",
+    "test:performance": "cd tests/performance && npm test",
+    "test:all": "npm test && npm run test:integration && npm run test:e2e",
+    "coverage": "npm run test:all -- --coverage",
+    "lint": "npm run lint:frontend && npm run lint:backend && npm run lint:sdk",
+    "lint:frontend": "cd frontend && npm run lint",
+    "lint:backend": "npm run lint:services",
+    "lint:services": "concurrently \"cd backend/event-collection && npm run lint\" \"cd backend/analytics-processing && npm run lint\" \"cd backend/heatmap-generation && npm run lint\" \"cd backend/user-management && npm run lint\" \"cd backend/privacy-service && npm run lint\" \"cd backend/ai-insights && npm run lint\"",
+    "lint:sdk": "cd sdk && npm run lint",
+    "lint:fix": "npm run lint:frontend -- --fix && npm run lint:backend -- --fix && npm run lint:sdk -- --fix",
+    "type-check": "npm run type-check:frontend && npm run type-check:backend && npm run type-check:sdk",
+    "type-check:frontend": "cd frontend && npm run type-check",
+    "type-check:backend": "npm run type-check:services",
+    "type-check:services": "concurrently \"cd backend/event-collection && npm run type-check\" \"cd backend/analytics-processing && npm run type-check\" \"cd backend/heatmap-generation && npm run type-check\" \"cd backend/user-management && npm run type-check\" \"cd backend/privacy-service && npm run type-check\" \"cd backend/ai-insights && npm run type-check\"",
+    "type-check:sdk": "cd sdk && npm run type-check",
+    "docker:build": "docker-compose build",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f",
+    "k8s:deploy": "kubectl apply -f infrastructure/kubernetes/",
+    "k8s:delete": "kubectl delete -f infrastructure/kubernetes/",
+    "setup": "npm install && npm run setup:frontend && npm run setup:backend && npm run setup:sdk && npm run setup:tests",
+    "setup:frontend": "cd frontend && npm install",
+    "setup:backend": "npm run setup:services",
+    "setup:services": "cd backend/event-collection && npm install && cd ../analytics-processing && npm install && cd ../heatmap-generation && npm install && cd ../user-management && npm install && cd ../privacy-service && npm install && cd ../ai-insights && npm install",
+    "setup:sdk": "cd sdk && npm install",
+    "setup:tests": "cd tests/integration && npm install && cd ../e2e && npm install && cd ../performance && npm install",
+    "clean": "npm run clean:frontend && npm run clean:backend && npm run clean:sdk",
+    "clean:frontend": "cd frontend && rm -rf .next node_modules",
+    "clean:backend": "npm run clean:services",
+    "clean:services": "cd backend/event-collection && rm -rf dist node_modules && cd ../analytics-processing && rm -rf dist node_modules && cd ../heatmap-generation && rm -rf dist node_modules && cd ../user-management && rm -rf dist node_modules && cd ../privacy-service && rm -rf dist node_modules && cd ../ai-insights && rm -rf dist node_modules",
+    "clean:sdk": "cd sdk && rm -rf dist node_modules",
+    "docs:build": "npm run docs:api && npm run docs:guides",
+    "docs:api": "swagger-codegen generate -i docs/api/openapi.yaml -l html2 -o docs/api/dist",
+    "docs:guides": "gitbook build docs/guides docs/guides/dist",
+    "security:audit": "npm audit --audit-level=moderate",
+    "security:scan": "snyk test",
+    "performance:test": "npm run test:performance",
+    "migrate:up": "cd backend/user-management && npx prisma migrate deploy",
+    "migrate:down": "cd backend/user-management && npx prisma migrate reset",
+    "seed": "cd backend/user-management && npx prisma db seed",
+    "analytics:setup": "cd backend/analytics-processing && npm run setup:clickhouse",
+    "monitoring:setup": "docker-compose -f infrastructure/docker/monitoring.yml up -d"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.5",
+    "concurrently": "^8.2.2",
+    "husky": "^8.0.3",
+    "lint-staged": "^15.2.0",
+    "prettier": "^3.1.1",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "dotenv": "^16.3.1"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/abdul712/MicroSaas-Ideas.git",
+    "directory": "website-heatmap-tool"
+  },
+  "author": {
+    "name": "Abdul Rahim",
+    "email": "abdul712@users.noreply.github.com"
+  },
+  "license": "MIT",
+  "keywords": [
+    "heatmap",
+    "analytics",
+    "user-behavior",
+    "conversion-optimization",
+    "website-analytics",
+    "session-replay",
+    "privacy-compliant",
+    "gdpr",
+    "ccpa",
+    "real-time-analytics",
+    "microservices",
+    "enterprise",
+    "saas",
+    "typescript",
+    "next.js",
+    "node.js",
+    "postgresql",
+    "redis",
+    "clickhouse",
+    "kafka"
+  ],
+  "husky": {
+    "hooks": {
+      "pre-commit": "lint-staged",
+      "pre-push": "npm run type-check && npm test"
+    }
+  },
+  "lint-staged": {
+    "*.{js,jsx,ts,tsx}": [
+      "prettier --write",
+      "eslint --fix"
+    ],
+    "*.{json,md,yml,yaml}": [
+      "prettier --write"
+    ]
+  }
+}
