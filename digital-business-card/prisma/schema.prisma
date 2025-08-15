@@ -1,0 +1,200 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String  @map("user_id")
+  type              String
+  provider          String
+  providerAccountId String  @map("provider_account_id")
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id")
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime? @map("email_verified")
+  image         String?
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  
+  // Subscription fields
+  subscriptionId     String?           @map("subscription_id")
+  subscriptionStatus String?           @map("subscription_status")
+  customerId         String?           @map("customer_id")
+  customDomain       String?           @map("custom_domain")
+  
+  accounts      Account[]
+  sessions      Session[]
+  cards         Card[]
+  teams         TeamMember[]
+  connections   Connection[]
+  analytics     Analytics[]
+
+  @@map("users")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verificationtokens")
+}
+
+model Template {
+  id          String   @id @default(cuid())
+  name        String
+  category    String
+  designJson  Json     @map("design_json")
+  premium     Boolean  @default(false)
+  previewUrl  String?  @map("preview_url")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  
+  cards Card[]
+
+  @@map("templates")
+}
+
+model Card {
+  id          String   @id @default(cuid())
+  userId      String   @map("user_id")
+  templateId  String   @map("template_id")
+  slug        String   @unique
+  qrCode      String?  @map("qr_code")
+  isPrimary   Boolean  @default(false) @map("is_primary")
+  isActive    Boolean  @default(true) @map("is_active")
+  customCss   String?  @map("custom_css")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  template    Template     @relation(fields: [templateId], references: [id])
+  fields      CardField[]
+  views       CardView[]
+  connections Connection[]
+  analytics   Analytics[]
+
+  @@map("cards")
+}
+
+model CardField {
+  id        String   @id @default(cuid())
+  cardId    String   @map("card_id")
+  fieldType String   @map("field_type") // name, title, company, phone, email, website, social, custom
+  label     String
+  value     String
+  order     Int
+  isVisible Boolean  @default(true) @map("is_visible")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  
+  card Card @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  @@map("card_fields")
+}
+
+model CardView {
+  id         String   @id @default(cuid())
+  cardId     String   @map("card_id")
+  viewerIp   String?  @map("viewer_ip")
+  userAgent  String?  @map("user_agent")
+  location   Json?    // {country, city, lat, lng}
+  device     String?  // mobile, desktop, tablet
+  referrer   String?
+  timestamp  DateTime @default(now())
+  
+  card Card @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  @@map("card_views")
+}
+
+model Connection {
+  id          String   @id @default(cuid())
+  cardId      String   @map("card_id")
+  userId      String?  @map("user_id") // If the connection is a registered user
+  contactInfo Json     @map("contact_info") // {name, email, phone, company, etc.}
+  notes       String?
+  tags        String[] @default([])
+  connectedAt DateTime @default(now()) @map("connected_at")
+  
+  card Card  @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("connections")
+}
+
+model Team {
+  id          String   @id @default(cuid())
+  name        String
+  adminId     String   @map("admin_id")
+  brandingJson Json?   @map("branding_json") // {logo, colors, fonts, etc.}
+  customDomain String? @map("custom_domain")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  
+  members TeamMember[]
+
+  @@map("teams")
+}
+
+model TeamMember {
+  id     String @id @default(cuid())
+  teamId String @map("team_id")
+  userId String @map("user_id")
+  role   String // admin, member, viewer
+  
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@map("team_members")
+}
+
+model Analytics {
+  id         String   @id @default(cuid())
+  cardId     String   @map("card_id")
+  userId     String   @map("user_id")
+  metricType String   @map("metric_type") // views, connections, shares, saves
+  value      Int
+  date       DateTime @db.Date
+  
+  card Card @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([cardId, metricType, date])
+  @@map("analytics")
+}
