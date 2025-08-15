@@ -1,0 +1,578 @@
+// Lead Magnet Creator - Enterprise Database Schema
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Multi-tenant Organization Model
+model Organization {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  domain      String?  @unique
+  logo        String?
+  settings    Json     @default("{}")
+  plan        Plan     @default(STARTER)
+  planLimits  Json     @default("{}")
+  
+  // Subscription & Billing
+  stripeCustomerId       String?   @unique
+  stripeSubscriptionId   String?   @unique
+  subscriptionStatus     String?
+  currentPeriodStart     DateTime?
+  currentPeriodEnd       DateTime?
+  
+  // Usage Tracking
+  monthlyGenerations     Int       @default(0)
+  monthlyDownloads       Int       @default(0)
+  storageUsed           BigInt     @default(0)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Relations
+  users         User[]
+  leadMagnets   LeadMagnet[]
+  templates     Template[]
+  brandKits     BrandKit[]
+  integrations  Integration[]
+  auditLogs     AuditLog[]
+  
+  @@map("organizations")
+}
+
+// User Authentication & Management
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  emailVerified DateTime?
+  name          String?
+  image         String?
+  role          Role      @default(MEMBER)
+  
+  // Profile
+  firstName     String?
+  lastName      String?
+  timezone      String    @default("UTC")
+  preferences   Json      @default("{}")
+  lastLoginAt   DateTime?
+  
+  // Organization relationship
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Relations
+  accounts        Account[]
+  sessions        Session[]
+  leadMagnets     LeadMagnet[]
+  comments        Comment[]
+  auditLogs       AuditLog[]
+  
+  @@map("users")
+}
+
+// NextAuth Models
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// Core Lead Magnet Model
+model LeadMagnet {
+  id          String           @id @default(cuid())
+  title       String
+  description String?
+  type        LeadMagnetType
+  status      PublishStatus    @default(DRAFT)
+  
+  // Content & Design
+  content     Json             @default("{}")
+  design      Json             @default("{}")
+  pages       Json             @default("[]")
+  
+  // File & Assets
+  thumbnailUrl    String?
+  previewUrl      String?
+  downloadUrl     String?
+  fileSize        Int?
+  
+  // SEO & Marketing
+  slug            String           @unique
+  metaTitle       String?
+  metaDescription String?
+  keywords        String[]
+  
+  // Analytics
+  views           Int              @default(0)
+  downloads       Int              @default(0)
+  conversions     Int              @default(0)
+  conversionRate  Float            @default(0)
+  
+  // Ownership
+  organizationId  String
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdById     String
+  createdBy       User             @relation(fields: [createdById], references: [id])
+  
+  // Template relationship
+  templateId      String?
+  template        Template?        @relation(fields: [templateId], references: [id])
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  publishedAt DateTime?
+  
+  // Relations
+  forms         Form[]
+  landingPages  LandingPage[]
+  analytics     Analytics[]
+  abTests       ABTest[]
+  comments      Comment[]
+  downloads     Download[]
+  
+  @@map("lead_magnets")
+}
+
+// Template System
+model Template {
+  id          String         @id @default(cuid())
+  title       String
+  description String?
+  category    String
+  industry    String[]
+  type        LeadMagnetType
+  
+  // Template Content
+  design      Json           @default("{}")
+  preview     Json           @default("{}")
+  thumbnailUrl String?
+  
+  // Metadata
+  tags        String[]
+  difficulty  Difficulty     @default(BEGINNER)
+  isPremium   Boolean        @default(false)
+  isPublic    Boolean        @default(true)
+  
+  // Usage & Rating
+  usageCount  Int            @default(0)
+  rating      Float          @default(0)
+  ratingCount Int            @default(0)
+  
+  // Ownership
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Relations
+  leadMagnets LeadMagnet[]
+  reviews     TemplateReview[]
+  
+  @@map("templates")
+}
+
+// Brand Kit Management
+model BrandKit {
+  id          String @id @default(cuid())
+  name        String
+  
+  // Brand Colors
+  primaryColor     String
+  secondaryColor   String
+  accentColor      String
+  backgroundColor  String
+  textColor        String
+  
+  // Typography
+  fontFamily       String  @default("Inter")
+  headingFont      String?
+  bodyFont         String?
+  
+  // Logo & Assets
+  logoUrl          String?
+  logoVariants     Json    @default("{}")
+  
+  // Settings
+  isDefault        Boolean @default(false)
+  
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@map("brand_kits")
+}
+
+// Form Builder & Capture
+model Form {
+  id          String      @id @default(cuid())
+  name        String
+  title       String?
+  description String?
+  
+  // Form Configuration
+  fields      Json        @default("[]")
+  settings    Json        @default("{}")
+  styling     Json        @default("{}")
+  
+  // Behavior
+  redirectUrl String?
+  thankYouMessage String?
+  
+  // Analytics
+  views       Int         @default(0)
+  submissions Int         @default(0)
+  conversionRate Float    @default(0)
+  
+  // Lead Magnet relationship
+  leadMagnetId String
+  leadMagnet   LeadMagnet @relation(fields: [leadMagnetId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Relations
+  submissions FormSubmission[]
+  abTests     ABTest[]
+  
+  @@map("forms")
+}
+
+// Lead Capture & Management
+model FormSubmission {
+  id          String   @id @default(cuid())
+  
+  // Submitted Data
+  data        Json     @default("{}")
+  email       String
+  name        String?
+  
+  // Tracking
+  ipAddress   String?
+  userAgent   String?
+  source      String?
+  utm         Json     @default("{}")
+  
+  // Processing
+  processed   Boolean  @default(false)
+  processedAt DateTime?
+  
+  formId String
+  form   Form   @relation(fields: [formId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+  
+  // Relations
+  downloads Download[]
+  
+  @@map("form_submissions")
+}
+
+// Landing Page Builder
+model LandingPage {
+  id          String     @id @default(cuid())
+  title       String
+  slug        String     @unique
+  
+  // Page Content
+  blocks      Json       @default("[]")
+  settings    Json       @default("{}")
+  seoSettings Json       @default("{}")
+  
+  // Status
+  status      PublishStatus @default(DRAFT)
+  
+  // Analytics
+  views       Int        @default(0)
+  conversions Int        @default(0)
+  
+  leadMagnetId String
+  leadMagnet   LeadMagnet @relation(fields: [leadMagnetId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  publishedAt DateTime?
+  
+  @@map("landing_pages")
+}
+
+// A/B Testing System
+model ABTest {
+  id          String    @id @default(cuid())
+  name        String
+  description String?
+  
+  // Test Configuration
+  variants    Json      @default("[]")
+  trafficSplit Json     @default("{}")
+  
+  // Test Status
+  status      TestStatus @default(DRAFT)
+  winnerVariant String?
+  
+  // Results
+  startedAt   DateTime?
+  endedAt     DateTime?
+  results     Json      @default("{}")
+  
+  // Relationships
+  leadMagnetId String?
+  leadMagnet   LeadMagnet? @relation(fields: [leadMagnetId], references: [id])
+  
+  formId      String?
+  form        Form?      @relation(fields: [formId], references: [id])
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@map("ab_tests")
+}
+
+// Analytics & Tracking
+model Analytics {
+  id          String     @id @default(cuid())
+  
+  // Event Data
+  event       String
+  properties  Json       @default("{}")
+  
+  // Session Info
+  sessionId   String?
+  userId      String?
+  
+  // Tracking
+  timestamp   DateTime   @default(now())
+  ipAddress   String?
+  userAgent   String?
+  
+  leadMagnetId String?
+  leadMagnet   LeadMagnet? @relation(fields: [leadMagnetId], references: [id])
+  
+  @@map("analytics")
+}
+
+// Download Tracking
+model Download {
+  id          String     @id @default(cuid())
+  
+  // Download Info
+  fileName    String
+  fileUrl     String
+  downloadedAt DateTime  @default(now())
+  
+  // User Info
+  ipAddress   String?
+  userAgent   String?
+  source      String?
+  
+  leadMagnetId String
+  leadMagnet   LeadMagnet @relation(fields: [leadMagnetId], references: [id], onDelete: Cascade)
+  
+  submissionId String?
+  submission   FormSubmission? @relation(fields: [submissionId], references: [id])
+  
+  @@map("downloads")
+}
+
+// AI Generation Tracking
+model AIGeneration {
+  id          String       @id @default(cuid())
+  
+  // Generation Details
+  type        GenerationType
+  prompt      String
+  result      Json         @default("{}")
+  
+  // Quality & Usage
+  quality     Float?
+  usageType   String
+  
+  // Billing
+  tokens      Int?
+  cost        Float?
+  
+  organizationId String
+  
+  createdAt DateTime @default(now())
+  
+  @@map("ai_generations")
+}
+
+// Integrations & Webhooks
+model Integration {
+  id          String @id @default(cuid())
+  name        String
+  type        String
+  
+  // Configuration
+  config      Json   @default("{}")
+  credentials Json   @default("{}")
+  
+  // Status
+  isActive    Boolean @default(true)
+  lastSync    DateTime?
+  
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@map("integrations")
+}
+
+// Comments & Collaboration
+model Comment {
+  id          String @id @default(cuid())
+  content     String
+  
+  // Position (for design feedback)
+  position    Json?  @default("{}")
+  
+  leadMagnetId String
+  leadMagnet   LeadMagnet @relation(fields: [leadMagnetId], references: [id], onDelete: Cascade)
+  
+  authorId    String
+  author      User   @relation(fields: [authorId], references: [id])
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@map("comments")
+}
+
+// Template Reviews
+model TemplateReview {
+  id          String @id @default(cuid())
+  rating      Int
+  comment     String?
+  
+  templateId  String
+  template    Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+  
+  @@map("template_reviews")
+}
+
+// Audit Logging
+model AuditLog {
+  id          String @id @default(cuid())
+  
+  // Action Details
+  action      String
+  resource    String
+  resourceId  String?
+  changes     Json?  @default("{}")
+  
+  // User Context
+  userId      String?
+  user        User?  @relation(fields: [userId], references: [id])
+  
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  timestamp DateTime @default(now())
+  
+  @@map("audit_logs")
+}
+
+// Enums
+enum Role {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+enum Plan {
+  STARTER
+  PROFESSIONAL
+  BUSINESS
+  ENTERPRISE
+}
+
+enum LeadMagnetType {
+  EBOOK
+  CHECKLIST
+  TEMPLATE
+  CALCULATOR
+  INFOGRAPHIC
+  VIDEO
+  WEBINAR
+  COURSE
+  TOOLKIT
+  GUIDE
+}
+
+enum PublishStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+  SCHEDULED
+}
+
+enum TestStatus {
+  DRAFT
+  RUNNING
+  PAUSED
+  COMPLETED
+  CANCELLED
+}
+
+enum Difficulty {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+enum GenerationType {
+  CONTENT
+  DESIGN
+  IMAGE
+  OPTIMIZATION
+  SUGGESTION
+}
