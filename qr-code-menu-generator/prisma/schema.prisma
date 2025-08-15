@@ -1,0 +1,344 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id              String        @id @default(cuid())
+  name            String?
+  email           String        @unique
+  emailVerified   DateTime?
+  image           String?
+  password        String?
+  role            UserRole      @default(RESTAURANT_OWNER)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  accounts        Account[]
+  sessions        Session[]
+  restaurants     Restaurant[]
+  staffMemberships StaffMember[]
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Restaurant {
+  id              String           @id @default(cuid())
+  name            String
+  slug            String           @unique
+  description     String?
+  address         String?
+  phone           String?
+  email           String?
+  website         String?
+  timezone        String           @default("UTC")
+  currency        String           @default("USD")
+  logo            String?
+  coverImage      String?
+  subscriptionTier SubscriptionTier @default(FREE)
+  isActive        Boolean          @default(true)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  // Relationships
+  owner           User             @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  ownerId         String
+  menus           Menu[]
+  qrCodes         QrCode[]
+  analytics       Analytics[]
+  staffMembers    StaffMember[]
+  locations       Location[]
+
+  @@index([slug])
+  @@index([ownerId])
+}
+
+model Location {
+  id           String     @id @default(cuid())
+  name         String
+  address      String
+  phone        String?
+  isMain       Boolean    @default(false)
+  isActive     Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  restaurantId String
+  qrCodes      QrCode[]
+
+  @@index([restaurantId])
+}
+
+model StaffMember {
+  id           String     @id @default(cuid())
+  role         StaffRole  @default(STAFF)
+  permissions  Json       @default("{}")
+  isActive     Boolean    @default(true)
+  invitedAt    DateTime   @default(now())
+  joinedAt     DateTime?
+
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId       String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  restaurantId String
+
+  @@unique([userId, restaurantId])
+  @@index([restaurantId])
+}
+
+model Menu {
+  id           String        @id @default(cuid())
+  name         String
+  description  String?
+  language     String        @default("en")
+  currency     String        @default("USD")
+  isActive     Boolean       @default(true)
+  isDefault    Boolean       @default(false)
+  displayOrder Int           @default(0)
+  settings     Json          @default("{}")
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  restaurant   Restaurant    @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  restaurantId String
+  categories   Category[]
+  qrCodes      QrCode[]
+
+  @@index([restaurantId])
+  @@index([isActive])
+}
+
+model Category {
+  id           String      @id @default(cuid())
+  name         String
+  description  String?
+  icon         String?
+  color        String?
+  displayOrder Int         @default(0)
+  isActive     Boolean     @default(true)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  menu         Menu        @relation(fields: [menuId], references: [id], onDelete: Cascade)
+  menuId       String
+  items        MenuItem[]
+
+  @@index([menuId])
+  @@index([displayOrder])
+}
+
+model MenuItem {
+  id           String          @id @default(cuid())
+  name         String
+  description  String?
+  price        Decimal         @default(0) @db.Decimal(10, 2)
+  originalPrice Decimal?       @db.Decimal(10, 2)
+  image        String?
+  allergens    String[]        @default([])
+  dietaryInfo  String[]        @default([])
+  tags         String[]        @default([])
+  isAvailable  Boolean         @default(true)
+  isPopular    Boolean         @default(false)
+  isFeatured   Boolean         @default(false)
+  displayOrder Int             @default(0)
+  preparationTime Int?         // in minutes
+  calories     Int?
+  spiceLevel   SpiceLevel?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  category     Category        @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  categoryId   String
+  modifiers    Modifier[]
+  analytics    ItemAnalytics[]
+
+  @@index([categoryId])
+  @@index([displayOrder])
+  @@index([isAvailable])
+}
+
+model Modifier {
+  id           String         @id @default(cuid())
+  name         String
+  description  String?
+  type         ModifierType   @default(SINGLE_SELECT)
+  isRequired   Boolean        @default(false)
+  displayOrder Int            @default(0)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  menuItem     MenuItem       @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  menuItemId   String
+  options      ModifierOption[]
+
+  @@index([menuItemId])
+}
+
+model ModifierOption {
+  id           String    @id @default(cuid())
+  name         String
+  priceChange  Decimal   @default(0) @db.Decimal(10, 2)
+  isDefault    Boolean   @default(false)
+  displayOrder Int       @default(0)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  modifier     Modifier  @relation(fields: [modifierId], references: [id], onDelete: Cascade)
+  modifierId   String
+
+  @@index([modifierId])
+}
+
+model QrCode {
+  id           String     @id @default(cuid())
+  code         String     @unique
+  shortUrl     String     @unique
+  tableNumber  String?
+  description  String?
+  isActive     Boolean    @default(true)
+  scanCount    Int        @default(0)
+  lastScannedAt DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  restaurantId String
+  menu         Menu       @relation(fields: [menuId], references: [id], onDelete: Cascade)
+  menuId       String
+  location     Location?  @relation(fields: [locationId], references: [id])
+  locationId   String?
+  scans        QrScan[]
+
+  @@index([restaurantId])
+  @@index([code])
+  @@index([shortUrl])
+}
+
+model QrScan {
+  id           String    @id @default(cuid())
+  userAgent    String?
+  ipAddress    String?
+  country      String?
+  city         String?
+  device       String?
+  browser      String?
+  referrer     String?
+  scannedAt    DateTime  @default(now())
+
+  qrCode       QrCode    @relation(fields: [qrCodeId], references: [id], onDelete: Cascade)
+  qrCodeId     String
+
+  @@index([qrCodeId])
+  @@index([scannedAt])
+}
+
+model Analytics {
+  id           String       @id @default(cuid())
+  eventType    AnalyticsEvent
+  metadata     Json         @default("{}")
+  value        Decimal?     @db.Decimal(10, 2)
+  timestamp    DateTime     @default(now())
+
+  restaurant   Restaurant   @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  restaurantId String
+
+  @@index([restaurantId])
+  @@index([eventType])
+  @@index([timestamp])
+}
+
+model ItemAnalytics {
+  id           String    @id @default(cuid())
+  views        Int       @default(0)
+  clicks       Int       @default(0)
+  date         DateTime  @default(now())
+
+  menuItem     MenuItem  @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  menuItemId   String
+
+  @@unique([menuItemId, date])
+  @@index([menuItemId])
+  @@index([date])
+}
+
+// Enums
+enum UserRole {
+  ADMIN
+  RESTAURANT_OWNER
+  STAFF
+}
+
+enum StaffRole {
+  MANAGER
+  STAFF
+  VIEWER
+}
+
+enum SubscriptionTier {
+  FREE
+  STARTER
+  PROFESSIONAL
+  CHAIN
+}
+
+enum SpiceLevel {
+  MILD
+  MEDIUM
+  HOT
+  EXTRA_HOT
+}
+
+enum ModifierType {
+  SINGLE_SELECT
+  MULTI_SELECT
+  TEXT_INPUT
+}
+
+enum AnalyticsEvent {
+  MENU_VIEW
+  ITEM_VIEW
+  QR_SCAN
+  MENU_UPDATE
+  ITEM_UPDATE
+  CATEGORY_UPDATE
+}
