@@ -1,0 +1,277 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User and organization models
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  image     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // NextAuth fields
+  emailVerified DateTime?
+  accounts      Account[]
+  sessions      Session[]
+
+  // Business relationships
+  organizationMemberships OrganizationMember[]
+  insights                Insight[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// Organization and business models
+model Organization {
+  id               String   @id @default(cuid())
+  name             String
+  industry         String?
+  timezone         String   @default("UTC")
+  fiscalYearStart  Int      @default(1)
+  subscriptionTier String   @default("starter") // starter, professional, business, enterprise
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Relationships
+  members     OrganizationMember[]
+  dataSources DataSource[]
+  metrics     Metric[]
+  trends      Trend[]
+  predictions Prediction[]
+  insights    Insight[]
+  patterns    Pattern[]
+
+  @@map("organizations")
+}
+
+model OrganizationMember {
+  id             String @id @default(cuid())
+  organizationId String
+  userId         String
+  role           String @default("member") // owner, admin, member, viewer
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@map("organization_members")
+}
+
+// Data source and metric models
+model DataSource {
+  id             String    @id @default(cuid())
+  organizationId String
+  type           String // sales, inventory, finance, marketing, custom
+  name           String
+  connectionType String // api, database, file, manual
+  config         Json // Connection configuration
+  lastSync       DateTime?
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  metrics      Metric[]
+  timeSeriesData TimeSeriesData[]
+
+  @@map("data_sources")
+}
+
+model Metric {
+  id              String  @id @default(cuid())
+  organizationId  String
+  dataSourceId    String?
+  name            String
+  category        String // revenue, sales, marketing, operations, finance
+  unit            String? // USD, units, percentage, etc.
+  aggregationType String  @default("sum") // sum, average, count, min, max
+  isCurrency      Boolean @default(false)
+  isActive        Boolean @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  dataSource     DataSource?      @relation(fields: [dataSourceId], references: [id], onDelete: SetNull)
+  timeSeriesData TimeSeriesData[]
+  trends         Trend[]
+  predictions    Prediction[]
+
+  @@map("metrics")
+}
+
+// Time series and analytics models
+model TimeSeriesData {
+  id             String   @id @default(cuid())
+  organizationId String
+  metricId       String
+  dataSourceId   String?
+  timestamp      DateTime
+  value          Float
+  dimensions     Json? // Additional context like product, location, channel
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  metric       Metric       @relation(fields: [metricId], references: [id], onDelete: Cascade)
+  dataSource   DataSource?  @relation(fields: [dataSourceId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, metricId, timestamp])
+  @@index([organizationId, timestamp])
+  @@index([metricId, timestamp])
+  @@map("time_series_data")
+}
+
+model Trend {
+  id           String    @id @default(cuid())
+  organizationId String
+  metricId     String
+  trendType    String // growth, decline, seasonal, cyclical, anomaly
+  direction    String // up, down, stable
+  strength     Float // 0 to 1
+  confidence   Float // 0 to 1
+  periodStart  DateTime
+  periodEnd    DateTime
+  detectedAt   DateTime @default(now())
+  metadata     Json? // Additional trend information
+  createdAt    DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  metric       Metric       @relation(fields: [metricId], references: [id], onDelete: Cascade)
+
+  @@map("trends")
+}
+
+model Prediction {
+  id                 String   @id @default(cuid())
+  organizationId     String
+  metricId           String
+  predictionDate     DateTime
+  predictedValue     Float
+  confidenceInterval Json // { lower: number, upper: number }
+  modelType          String // linear, polynomial, arima, lstm, etc.
+  accuracyScore      Float?
+  metadata           Json? // Model parameters and additional info
+  createdAt          DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  metric       Metric       @relation(fields: [metricId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, predictionDate])
+  @@map("predictions")
+}
+
+// Insights and patterns
+model Insight {
+  id               String   @id @default(cuid())
+  organizationId   String
+  userId           String?
+  type             String // opportunity, risk, anomaly, correlation, seasonal
+  severity         String // critical, high, medium, low
+  title            String
+  description      String   @db.Text
+  metrics          Json // Related metrics and their IDs
+  recommendations  Json // Actionable recommendations
+  potentialImpact  Float? // Estimated impact value
+  isDismissed      Boolean  @default(false)
+  dismissedAt      DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@map("insights")
+}
+
+model Pattern {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  patternType    String // seasonal, weekly, correlation, trend
+  description    String?  @db.Text
+  metrics        Json // Related metrics
+  parameters     Json // Pattern-specific parameters
+  confidence     Float // 0 to 1
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("patterns")
+}
+
+// Subscription and billing
+model Subscription {
+  id                 String    @id @default(cuid())
+  organizationId     String    @unique
+  stripeCustomerId   String?   @unique
+  stripeSubscriptionId String? @unique
+  stripePriceId      String?
+  status             String // active, canceled, past_due, etc.
+  currentPeriodStart DateTime?
+  currentPeriodEnd   DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@map("subscriptions")
+}
+
+model WebhookEvent {
+  id        String   @id @default(cuid())
+  type      String
+  data      Json
+  processed Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@map("webhook_events")
+}
