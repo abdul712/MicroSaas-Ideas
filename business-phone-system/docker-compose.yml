@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  # Main application
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://cloudphone:cloudphone_password@db:5432/cloudphone_db
+      - NEXTAUTH_SECRET=your-super-secret-jwt-secret-key-here
+      - NEXTAUTH_URL=http://localhost:3000
+      - REDIS_URL=redis://redis:6379
+      - SOCKET_URL=http://localhost:3001
+    depends_on:
+      - db
+      - redis
+      - signaling-server
+    networks:
+      - cloudphone-network
+
+  # WebRTC Signaling Server
+  signaling-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.signaling
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - redis
+    networks:
+      - cloudphone-network
+
+  # PostgreSQL Database
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=cloudphone_db
+      - POSTGRES_USER=cloudphone
+      - POSTGRES_PASSWORD=cloudphone_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - cloudphone-network
+
+  # Redis for caching and sessions
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - cloudphone-network
+
+  # NGINX Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./ssl:/etc/nginx/ssl
+    depends_on:
+      - app
+      - signaling-server
+    networks:
+      - cloudphone-network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  cloudphone-network:
+    driver: bridge
