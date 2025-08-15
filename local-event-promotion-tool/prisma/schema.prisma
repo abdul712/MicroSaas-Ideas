@@ -1,0 +1,564 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [postgis]
+}
+
+// User and Authentication
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  image         String?
+  emailVerified DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  accounts      Account[]
+  sessions      Session[]
+  organizations OrganizationMember[]
+  events        Event[]
+  tickets       Ticket[]
+  analytics     UserAnalytics[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// Organization and Business Management
+model Organization {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  description String?
+  logo        String?
+  website     String?
+  phone       String?
+  email       String?
+  address     String?
+  city        String?
+  state       String?
+  country     String   @default("US")
+  zipCode     String?
+  latitude    Float?
+  longitude   Float?
+  timezone    String   @default("America/New_York")
+  
+  // Business details
+  category    String?
+  businessType String?
+  taxId       String?
+  
+  // Settings
+  settings    Json     @default("{}")
+  branding    Json     @default("{}")
+  
+  // Subscription
+  plan        SubscriptionPlan @default(FREE)
+  planExpires DateTime?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  members     OrganizationMember[]
+  events      Event[]
+  templates   EventTemplate[]
+  integrations SocialIntegration[]
+  analytics   OrganizationAnalytics[]
+  subscriptions Subscription[]
+
+  @@map("organizations")
+}
+
+model OrganizationMember {
+  id           String           @id @default(cuid())
+  userId       String
+  organizationId String
+  role         OrganizationRole @default(MEMBER)
+  permissions  Json             @default("[]")
+  invitedAt    DateTime?
+  joinedAt     DateTime         @default(now())
+  
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@map("organization_members")
+}
+
+// Event Management
+model Event {
+  id          String   @id @default(cuid())
+  title       String
+  description String?  @db.Text
+  slug        String   @unique
+  
+  // Dates and times
+  startDate   DateTime
+  endDate     DateTime
+  timezone    String
+  isAllDay    Boolean  @default(false)
+  
+  // Location
+  venue       String?
+  address     String?
+  city        String?
+  state       String?
+  country     String   @default("US")
+  zipCode     String?
+  latitude    Float?
+  longitude   Float?
+  location    String?  @db.Text // PostGIS POINT
+  isOnline    Boolean  @default(false)
+  onlineUrl   String?
+  
+  // Event details
+  category    EventCategory @default(OTHER)
+  tags        String[]
+  maxAttendees Int?
+  minAge      Int?
+  isPaid      Boolean  @default(false)
+  currency    String   @default("USD")
+  
+  // Media
+  images      EventImage[]
+  videos      String[]
+  
+  // Status and visibility
+  status      EventStatus     @default(DRAFT)
+  visibility  EventVisibility @default(PUBLIC)
+  
+  // SEO and marketing
+  metaTitle   String?
+  metaDescription String?
+  keywords    String[]
+  
+  // Settings
+  settings    Json @default("{}")
+  
+  // Tracking
+  views       Int @default(0)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  publishedAt DateTime?
+  
+  // Relations
+  organizationId String
+  createdById    String
+  
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation(fields: [createdById], references: [id])
+  
+  tickets      Ticket[]
+  ticketTiers  TicketTier[]
+  registrations Registration[]
+  distributions EventDistribution[]
+  analytics    EventAnalytics[]
+
+  @@map("events")
+}
+
+model EventImage {
+  id       String @id @default(cuid())
+  eventId  String
+  url      String
+  alt      String?
+  width    Int?
+  height   Int?
+  size     Int?
+  mimeType String?
+  isPrimary Boolean @default(false)
+  order    Int     @default(0)
+  
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@map("event_images")
+}
+
+// Event Templates
+model EventTemplate {
+  id             String @id @default(cuid())
+  name           String
+  description    String?
+  category       EventCategory
+  template       Json   // Event data template
+  designSettings Json   @default("{}")
+  isPublic       Boolean @default(false)
+  usageCount     Int     @default(0)
+  
+  organizationId String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  organization Organization? @relation(fields: [organizationId], references: [id])
+
+  @@map("event_templates")
+}
+
+// Ticketing System
+model TicketTier {
+  id          String   @id @default(cuid())
+  eventId     String
+  name        String
+  description String?
+  price       Int      // Price in cents
+  quantity    Int?     // null = unlimited
+  sold        Int      @default(0)
+  maxPerOrder Int      @default(10)
+  
+  // Sale period
+  saleStart   DateTime?
+  saleEnd     DateTime?
+  
+  // Settings
+  isActive    Boolean  @default(true)
+  order       Int      @default(0)
+  settings    Json     @default("{}")
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  event   Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  tickets Ticket[]
+
+  @@map("ticket_tiers")
+}
+
+model Ticket {
+  id          String       @id @default(cuid())
+  ticketTierId String
+  eventId     String
+  userId      String
+  orderId     String?
+  
+  // Ticket details
+  ticketNumber String      @unique
+  status      TicketStatus @default(VALID)
+  checkedIn   Boolean      @default(false)
+  checkedInAt DateTime?
+  
+  // Purchase details
+  price       Int          // Price paid in cents
+  fees        Int          @default(0)
+  discount    Int          @default(0)
+  
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  
+  ticketTier TicketTier @relation(fields: [ticketTierId], references: [id])
+  event      Event      @relation(fields: [eventId], references: [id])
+  user       User       @relation(fields: [userId], references: [id])
+
+  @@map("tickets")
+}
+
+// Registration for free events
+model Registration {
+  id       String             @id @default(cuid())
+  eventId  String
+  email    String
+  name     String
+  phone    String?
+  status   RegistrationStatus @default(CONFIRMED)
+  data     Json               @default("{}")
+  
+  checkedIn   Boolean  @default(false)
+  checkedInAt DateTime?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, email])
+  @@map("registrations")
+}
+
+// Social Media Integration
+model SocialIntegration {
+  id             String          @id @default(cuid())
+  organizationId String
+  platform       SocialPlatform
+  platformUserId String?
+  username       String?
+  accessToken    String?         @db.Text
+  refreshToken   String?         @db.Text
+  expiresAt      DateTime?
+  scopes         String[]
+  isActive       Boolean         @default(true)
+  settings       Json            @default("{}")
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, platform])
+  @@map("social_integrations")
+}
+
+// Event Distribution and Social Posting
+model EventDistribution {
+  id               String               @id @default(cuid())
+  eventId          String
+  platform         SocialPlatform
+  platformPostId   String?
+  status           DistributionStatus   @default(PENDING)
+  scheduledAt      DateTime?
+  publishedAt      DateTime?
+  content          Json                 // Platform-specific content
+  engagement       Json                 @default("{}")
+  errorMessage     String?
+  retryCount       Int                  @default(0)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@map("event_distributions")
+}
+
+// Analytics and Metrics
+model EventAnalytics {
+  id        String   @id @default(cuid())
+  eventId   String
+  date      DateTime @db.Date
+  
+  // Engagement metrics
+  views     Int @default(0)
+  clicks    Int @default(0)
+  shares    Int @default(0)
+  likes     Int @default(0)
+  comments  Int @default(0)
+  
+  // Conversion metrics
+  registrations Int @default(0)
+  ticketsSold   Int @default(0)
+  revenue       Int @default(0) // in cents
+  
+  // Traffic sources
+  sources   Json @default("{}")
+  
+  // Platform breakdown
+  platforms Json @default("{}")
+  
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, date])
+  @@map("event_analytics")
+}
+
+model OrganizationAnalytics {
+  id             String   @id @default(cuid())
+  organizationId String
+  date           DateTime @db.Date
+  
+  // Event metrics
+  eventsCreated   Int @default(0)
+  eventsPublished Int @default(0)
+  totalViews      Int @default(0)
+  totalShares     Int @default(0)
+  
+  // Revenue metrics
+  revenue         Int @default(0) // in cents
+  ticketsSold     Int @default(0)
+  registrations   Int @default(0)
+  
+  // Engagement metrics
+  avgEngagement   Float @default(0)
+  topPlatform     String?
+  
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, date])
+  @@map("organization_analytics")
+}
+
+model UserAnalytics {
+  id     String   @id @default(cuid())
+  userId String
+  date   DateTime @db.Date
+  
+  // Activity metrics
+  eventsCreated Int @default(0)
+  eventsViewed  Int @default(0)
+  timeSpent     Int @default(0) // in minutes
+  
+  // Feature usage
+  features Json @default("{}")
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@map("user_analytics")
+}
+
+// Subscription and Billing
+model Subscription {
+  id             String           @id @default(cuid())
+  organizationId String
+  stripeCustomerId String?       @unique
+  stripeSubscriptionId String?   @unique
+  stripePriceId  String?
+  status         SubscriptionStatus @default(INACTIVE)
+  plan           SubscriptionPlan
+  
+  // Billing
+  currentPeriodStart DateTime?
+  currentPeriodEnd   DateTime?
+  cancelAt           DateTime?
+  canceledAt         DateTime?
+  
+  // Usage tracking
+  eventsUsed    Int @default(0)
+  eventsLimit   Int
+  resetDate     DateTime?
+  
+  metadata      Json @default("{}")
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+// Enums
+enum OrganizationRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+enum EventCategory {
+  BUSINESS
+  NETWORKING
+  WORKSHOP
+  CONFERENCE
+  MEETUP
+  SOCIAL
+  SPORTS
+  MUSIC
+  ARTS
+  FOOD
+  CHARITY
+  EDUCATIONAL
+  HEALTH
+  TECHNOLOGY
+  OTHER
+}
+
+enum EventStatus {
+  DRAFT
+  PUBLISHED
+  CANCELLED
+  POSTPONED
+  COMPLETED
+}
+
+enum EventVisibility {
+  PUBLIC
+  UNLISTED
+  PRIVATE
+}
+
+enum TicketStatus {
+  VALID
+  USED
+  CANCELLED
+  REFUNDED
+}
+
+enum RegistrationStatus {
+  CONFIRMED
+  WAITLIST
+  CANCELLED
+}
+
+enum SocialPlatform {
+  FACEBOOK
+  INSTAGRAM
+  TWITTER
+  LINKEDIN
+  TIKTOK
+  GOOGLE_MY_BUSINESS
+  EVENTBRITE
+  MEETUP
+  NEXTDOOR
+}
+
+enum DistributionStatus {
+  PENDING
+  SCHEDULED
+  PUBLISHED
+  FAILED
+  CANCELLED
+}
+
+enum SubscriptionPlan {
+  FREE
+  BASIC
+  PRO
+  BUSINESS
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  INACTIVE
+  CANCELLED
+  PAST_DUE
+  UNPAID
+}
