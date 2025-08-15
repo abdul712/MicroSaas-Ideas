@@ -1,0 +1,105 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: recipe-cost-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: recipe_cost_calculator
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - recipe-cost-network
+
+  # Redis for caching and queues
+  redis:
+    image: redis:7-alpine
+    container_name: recipe-cost-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - recipe-cost-network
+
+  # Main Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: recipe-cost-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/recipe_cost_calculator
+      - REDIS_URL=redis://redis:6379
+      - NEXTAUTH_SECRET=your-nextauth-secret-change-in-production
+      - NEXTAUTH_URL=http://localhost:3000
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - recipe-cost-network
+    volumes:
+      - ./uploads:/app/uploads
+
+  # Development setup (uncomment for development)
+  # app-dev:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.dev
+  #   container_name: recipe-cost-app-dev
+  #   restart: unless-stopped
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     - NODE_ENV=development
+  #     - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/recipe_cost_calculator
+  #     - REDIS_URL=redis://redis:6379
+  #     - NEXTAUTH_SECRET=dev-secret
+  #     - NEXTAUTH_URL=http://localhost:3000
+  #   depends_on:
+  #     - postgres
+  #     - redis
+  #   networks:
+  #     - recipe-cost-network
+  #   volumes:
+  #     - .:/app
+  #     - /app/node_modules
+  #     - /app/.next
+
+  # Worker for background jobs (optional)
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: recipe-cost-worker
+    restart: unless-stopped
+    command: ["node", "worker.js"]
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/recipe_cost_calculator
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - recipe-cost-network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  recipe-cost-network:
+    driver: bridge

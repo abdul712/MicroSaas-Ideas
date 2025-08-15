@@ -1,0 +1,445 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// NextAuth.js required models
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// User and Restaurant Management
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  role          UserRole  @default(USER)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relationships
+  accounts            Account[]
+  sessions            Session[]
+  restaurants         Restaurant[]
+  recipes             Recipe[]
+  userRestaurantRoles UserRestaurantRole[]
+
+  @@map("users")
+}
+
+model Restaurant {
+  id          String   @id @default(cuid())
+  name        String
+  address     String?
+  city        String?
+  state       String?
+  country     String   @default("US")
+  currency    String   @default("USD")
+  timezone    String   @default("UTC")
+  settings    Json?
+  ownerId     String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relationships
+  owner               User                 @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  recipes             Recipe[]
+  ingredients         Ingredient[]
+  suppliers           Supplier[]
+  menus               Menu[]
+  inventoryItems      InventoryItem[]
+  userRestaurantRoles UserRestaurantRole[]
+  costSettings        CostSettings?
+
+  @@map("restaurants")
+}
+
+model UserRestaurantRole {
+  id           String         @id @default(cuid())
+  userId       String
+  restaurantId String
+  role         RestaurantRole
+  permissions  Json?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, restaurantId])
+  @@map("user_restaurant_roles")
+}
+
+// Recipe Management
+model Recipe {
+  id           String      @id @default(cuid())
+  name         String
+  description  String?
+  servings     Int         @default(1)
+  prepTime     Int? // in minutes
+  cookTime     Int? // in minutes
+  totalTime    Int? // in minutes
+  instructions String?     @db.Text
+  imageUrl     String?
+  category     String?
+  cuisine      String?
+  difficulty   Difficulty? @default(EASY)
+  isPublic     Boolean     @default(false)
+  tags         String[]
+  
+  // Cost calculation fields
+  totalCost       Decimal?  @db.Decimal(10, 4)
+  costPerServing  Decimal?  @db.Decimal(10, 4)
+  laborCost       Decimal?  @db.Decimal(10, 4)
+  overheadCost    Decimal?  @db.Decimal(10, 4)
+  profitMargin    Decimal?  @db.Decimal(5, 2) // percentage
+  sellingPrice    Decimal?  @db.Decimal(10, 2)
+  lastCostUpdate  DateTime?
+
+  // Metadata
+  userId       String
+  restaurantId String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relationships
+  user             User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  restaurant       Restaurant         @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  recipeIngredients RecipeIngredient[]
+  menuItems        MenuItem[]
+
+  @@index([restaurantId])
+  @@index([userId])
+  @@index([category])
+  @@map("recipes")
+}
+
+// Ingredient Management
+model Ingredient {
+  id             String  @id @default(cuid())
+  name           String
+  description    String?
+  category       String?
+  defaultUnit    String  @default("g") // gram, ml, piece, etc.
+  density        Decimal? @db.Decimal(8, 4) // for volume to weight conversion
+  allergens      String[]
+  nutritionalData Json?
+  
+  // Supplier information
+  supplierSku    String?
+  barcode        String?
+  
+  // Cost tracking
+  currentPrice   Decimal? @db.Decimal(10, 4)
+  priceUnit      String?  @default("g")
+  lastPriceUpdate DateTime?
+  
+  // Metadata
+  restaurantId   String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relationships
+  restaurant        Restaurant         @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  recipeIngredients RecipeIngredient[]
+  priceHistory      PriceHistory[]
+  inventoryItems    InventoryItem[]
+  supplierPrices    SupplierPrice[]
+
+  @@unique([name, restaurantId])
+  @@index([category])
+  @@index([restaurantId])
+  @@map("ingredients")
+}
+
+model RecipeIngredient {
+  id           String  @id @default(cuid())
+  quantity     Decimal @db.Decimal(10, 4)
+  unit         String
+  notes        String?
+  isOptional   Boolean @default(false)
+  costOverride Decimal? @db.Decimal(10, 4) // manual cost override
+  
+  // Calculated fields
+  unitCost     Decimal? @db.Decimal(10, 4)
+  totalCost    Decimal? @db.Decimal(10, 4)
+  
+  recipeId     String
+  ingredientId String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  recipe     Recipe     @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+
+  @@unique([recipeId, ingredientId])
+  @@map("recipe_ingredients")
+}
+
+// Supplier Management
+model Supplier {
+  id            String  @id @default(cuid())
+  name          String
+  contactName   String?
+  email         String?
+  phone         String?
+  address       String?
+  website       String?
+  
+  // Integration settings
+  apiEndpoint   String?
+  apiKey        String?
+  updateFrequency String? @default("daily") // daily, weekly, manual
+  isActive      Boolean @default(true)
+  
+  restaurantId  String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  restaurant     Restaurant      @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  supplierPrices SupplierPrice[]
+
+  @@index([restaurantId])
+  @@map("suppliers")
+}
+
+model SupplierPrice {
+  id           String   @id @default(cuid())
+  price        Decimal  @db.Decimal(10, 4)
+  unit         String
+  packaging    String? // "case of 12", "5lb bag", etc.
+  minimumOrder Int?
+  isAvailable  Boolean  @default(true)
+  
+  supplierId   String
+  ingredientId String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  supplier   Supplier   @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+
+  @@unique([supplierId, ingredientId])
+  @@index([ingredientId])
+  @@map("supplier_prices")
+}
+
+model PriceHistory {
+  id           String   @id @default(cuid())
+  price        Decimal  @db.Decimal(10, 4)
+  unit         String
+  source       String // "manual", "supplier", "api"
+  
+  ingredientId String
+  timestamp    DateTime @default(now())
+
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+
+  @@index([ingredientId, timestamp])
+  @@map("price_history")
+}
+
+// Menu Management
+model Menu {
+  id          String    @id @default(cuid())
+  name        String
+  description String?
+  isActive    Boolean   @default(true)
+  validFrom   DateTime?
+  validTo     DateTime?
+  
+  restaurantId String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  categories MenuCategory[]
+  items      MenuItem[]
+
+  @@index([restaurantId])
+  @@map("menus")
+}
+
+model MenuCategory {
+  id          String @id @default(cuid())
+  name        String
+  description String?
+  sortOrder   Int    @default(0)
+  
+  menuId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  menu  Menu       @relation(fields: [menuId], references: [id], onDelete: Cascade)
+  items MenuItem[]
+
+  @@index([menuId])
+  @@map("menu_categories")
+}
+
+model MenuItem {
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+  price       Decimal @db.Decimal(10, 2)
+  isAvailable Boolean @default(true)
+  sortOrder   Int     @default(0)
+  
+  // Cost analysis
+  costPercentage Decimal? @db.Decimal(5, 2)
+  profitMargin   Decimal? @db.Decimal(10, 2)
+  
+  menuId     String
+  categoryId String?
+  recipeId   String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  menu     Menu          @relation(fields: [menuId], references: [id], onDelete: Cascade)
+  category MenuCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  recipe   Recipe?       @relation(fields: [recipeId], references: [id], onDelete: SetNull)
+
+  @@index([menuId])
+  @@index([categoryId])
+  @@map("menu_items")
+}
+
+// Inventory Management
+model InventoryItem {
+  id              String   @id @default(cuid())
+  currentStock    Decimal  @db.Decimal(10, 4)
+  unit            String
+  minimumStock    Decimal? @db.Decimal(10, 4)
+  maximumStock    Decimal? @db.Decimal(10, 4)
+  reorderPoint    Decimal? @db.Decimal(10, 4)
+  lastStockUpdate DateTime @default(now())
+  
+  // Cost tracking
+  averageCost     Decimal? @db.Decimal(10, 4)
+  totalValue      Decimal? @db.Decimal(10, 2)
+  
+  ingredientId    String   @unique
+  restaurantId    String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  movements  InventoryMovement[]
+
+  @@index([restaurantId])
+  @@map("inventory_items")
+}
+
+model InventoryMovement {
+  id          String              @id @default(cuid())
+  type        InventoryMovementType
+  quantity    Decimal             @db.Decimal(10, 4)
+  unit        String
+  unitCost    Decimal?            @db.Decimal(10, 4)
+  totalCost   Decimal?            @db.Decimal(10, 2)
+  reference   String? // order number, recipe name, etc.
+  notes       String?
+  
+  inventoryItemId String
+  timestamp       DateTime @default(now())
+
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
+  @@index([inventoryItemId, timestamp])
+  @@map("inventory_movements")
+}
+
+// Cost Settings and Configuration
+model CostSettings {
+  id                    String  @id @default(cuid())
+  laborCostPerHour      Decimal @default(15.00) @db.Decimal(10, 2)
+  overheadPercentage    Decimal @default(15.00) @db.Decimal(5, 2) // percentage
+  targetProfitMargin    Decimal @default(25.00) @db.Decimal(5, 2) // percentage
+  wastePercentage       Decimal @default(5.00)  @db.Decimal(5, 2) // percentage
+  
+  // Tax settings
+  salesTaxRate          Decimal @default(0.00)  @db.Decimal(5, 4) // percentage
+  
+  // Auto-calculation settings
+  autoUpdateCosts       Boolean @default(true)
+  autoUpdateFrequency   String  @default("daily") // hourly, daily, weekly
+  
+  restaurantId          String  @unique
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  restaurant Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+
+  @@map("cost_settings")
+}
+
+// Enums
+enum UserRole {
+  USER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum RestaurantRole {
+  OWNER
+  MANAGER
+  CHEF
+  STAFF
+  VIEWER
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum InventoryMovementType {
+  PURCHASE
+  SALE
+  WASTE
+  ADJUSTMENT
+  TRANSFER
+  PRODUCTION
+}
