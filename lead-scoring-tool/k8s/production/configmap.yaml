@@ -1,0 +1,217 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lead-scoring-config
+  namespace: lead-scoring
+  labels:
+    app.kubernetes.io/name: lead-scoring-tool
+    app.kubernetes.io/component: config
+data:
+  # Application Configuration
+  ENV: "production"
+  APP_NAME: "Lead Scoring Tool"
+  APP_VERSION: "1.0.0"
+  DEBUG: "false"
+  
+  # CORS Configuration
+  CORS_ORIGINS: "https://app.leadscoringtool.com,https://leadscoringtool.com"
+  CORS_ALLOW_CREDENTIALS: "true"
+  
+  # Database Configuration
+  DATABASE_POOL_SIZE: "20"
+  DATABASE_MAX_OVERFLOW: "30"
+  DATABASE_POOL_TIMEOUT: "30"
+  DATABASE_POOL_RECYCLE: "3600"
+  
+  # Redis Configuration
+  REDIS_SSL: "true"
+  
+  # ClickHouse Configuration
+  CLICKHOUSE_DATABASE: "analytics"
+  
+  # Kafka Configuration
+  KAFKA_SECURITY_PROTOCOL: "SASL_SSL"
+  KAFKA_TOPIC_LEAD_EVENTS: "lead-events"
+  KAFKA_TOPIC_SCORE_EVENTS: "score-events"
+  KAFKA_TOPIC_USER_EVENTS: "user-events"
+  KAFKA_TOPIC_AUDIT_EVENTS: "audit-events"
+  
+  # ML Configuration
+  ML_MODEL_STORE_PATH: "/app/models"
+  DEFAULT_SCORING_MODEL: "xgboost_v1"
+  MODEL_RETRAIN_INTERVAL_HOURS: "24"
+  MODEL_PERFORMANCE_THRESHOLD: "0.85"
+  
+  # Email Configuration
+  SENDGRID_FROM_EMAIL: "noreply@leadscoringtool.com"
+  SENDGRID_FROM_NAME: "Lead Scoring Tool"
+  
+  # Rate Limiting
+  RATE_LIMIT_ENABLED: "true"
+  RATE_LIMIT_PER_MINUTE: "1000"
+  RATE_LIMIT_BURST: "2000"
+  
+  # Security Configuration
+  SECURITY_HEADERS_ENABLED: "true"
+  HSTS_MAX_AGE: "31536000"
+  CSP_ENABLED: "true"
+  
+  # Compliance Configuration
+  DATA_RETENTION_DAYS: "2555"
+  ANONYMIZATION_ENABLED: "true"
+  CONSENT_TRACKING_ENABLED: "true"
+  AUDIT_LOG_ENABLED: "true"
+  
+  # Feature Flags
+  FEATURE_ADVANCED_ANALYTICS: "true"
+  FEATURE_REAL_TIME_SCORING: "true"
+  FEATURE_ML_EXPLANATIONS: "true"
+  FEATURE_WEBHOOK_NOTIFICATIONS: "true"
+  FEATURE_BULK_OPERATIONS: "true"
+  
+  # Performance Configuration
+  MAX_REQUEST_SIZE: "10MB"
+  REQUEST_TIMEOUT: "30"
+  WORKER_PROCESSES: "4"
+  
+  # Cache Configuration
+  CACHE_TTL_DEFAULT: "300"
+  CACHE_TTL_USER_SESSION: "3600"
+  CACHE_TTL_SCORING_RESULTS: "1800"
+  
+  # Backup Configuration
+  BACKUP_ENABLED: "true"
+  BACKUP_RETENTION_DAYS: "30"
+  
+  # Business Logic Configuration
+  LEAD_SCORE_MIN: "0"
+  LEAD_SCORE_MAX: "100"
+  LEAD_SCORE_HOT_THRESHOLD: "80"
+  LEAD_SCORE_WARM_THRESHOLD: "60"
+  LEAD_SCORE_COLD_THRESHOLD: "40"
+  
+  # Scoring Weights
+  WEIGHT_DEMOGRAPHIC: "0.3"
+  WEIGHT_BEHAVIORAL: "0.4"
+  WEIGHT_FIT: "0.3"
+  
+  # Automatic Actions
+  AUTO_ASSIGN_HOT_LEADS: "true"
+  AUTO_NURTURE_WARM_LEADS: "true"
+  AUTO_ARCHIVE_COLD_LEADS_DAYS: "90"
+  
+  # Logging Configuration
+  LOG_LEVEL: "INFO"
+  LOG_FORMAT: "json"
+  
+  # Health Check Configuration
+  HEALTH_CHECK_TIMEOUT: "30"
+  HEALTH_CHECK_INTERVAL: "60"
+  HEALTH_CHECK_RETRIES: "3"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  namespace: lead-scoring
+  labels:
+    app.kubernetes.io/name: nginx
+    app.kubernetes.io/component: config
+data:
+  nginx.conf: |
+    upstream backend {
+        server backend-service:8000;
+    }
+    
+    upstream ml-services {
+        server ml-services-service:8001;
+    }
+    
+    server {
+        listen 80;
+        server_name _;
+        
+        # Security headers
+        add_header X-Frame-Options DENY;
+        add_header X-Content-Type-Options nosniff;
+        add_header X-XSS-Protection "1; mode=block";
+        add_header Referrer-Policy "origin-when-cross-origin";
+        
+        # Gzip compression
+        gzip on;
+        gzip_vary on;
+        gzip_min_length 1024;
+        gzip_types
+            text/plain
+            text/css
+            text/xml
+            text/javascript
+            application/json
+            application/javascript
+            application/xml+rss
+            application/atom+xml
+            image/svg+xml;
+        
+        # Rate limiting
+        limit_req_zone $binary_remote_addr zone=api:10m rate=10r/s;
+        limit_req_zone $binary_remote_addr zone=auth:10m rate=5r/s;
+        
+        # Frontend
+        location / {
+            proxy_pass http://frontend-service:3000;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection 'upgrade';
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_cache_bypass $http_upgrade;
+        }
+        
+        # Backend API
+        location /api/ {
+            limit_req zone=api burst=20 nodelay;
+            proxy_pass http://backend/;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_connect_timeout 60s;
+            proxy_send_timeout 60s;
+            proxy_read_timeout 60s;
+        }
+        
+        # ML Services API
+        location /ml/ {
+            limit_req zone=api burst=50 nodelay;
+            proxy_pass http://ml-services/;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_connect_timeout 120s;
+            proxy_send_timeout 120s;
+            proxy_read_timeout 120s;
+        }
+        
+        # Auth endpoints with stricter rate limiting
+        location /api/v1/auth/ {
+            limit_req zone=auth burst=10 nodelay;
+            proxy_pass http://backend/api/v1/auth/;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+        
+        # Health check endpoint
+        location /health {
+            access_log off;
+            return 200 "healthy\n";
+            add_header Content-Type text/plain;
+        }
+    }

@@ -1,0 +1,148 @@
+# Lead Scoring Tool Backend Dependencies
+# Core FastAPI and web framework dependencies
+
+# Web Framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+gunicorn==21.2.0
+starlette==0.27.0
+
+# Database
+sqlalchemy==2.0.23
+alembic==1.13.0
+psycopg2-binary==2.9.9
+asyncpg==0.29.0
+
+# Redis and Caching
+redis[hiredis]==5.0.1
+aioredis==2.0.1
+
+# ClickHouse Analytics
+clickhouse-driver==0.2.6
+asynch==0.2.2
+
+# Authentication and Security
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.6
+bcrypt==4.1.2
+
+# HTTP Client
+httpx==0.25.2
+aiohttp==3.9.1
+requests==2.31.0
+
+# Data Validation and Serialization
+pydantic==2.5.1
+pydantic[email]==2.5.1
+email-validator==2.1.0
+
+# Environment and Configuration
+python-dotenv==1.0.0
+pydantic-settings==2.1.0
+
+# Date and Time
+python-dateutil==2.8.2
+arrow==1.3.0
+
+# Data Processing
+pandas==2.1.4
+numpy==1.25.2
+scipy==1.11.4
+
+# Machine Learning (Basic)
+scikit-learn==1.3.2
+xgboost==2.0.2
+
+# Message Queue (Kafka)
+aiokafka==0.8.11
+kafka-python==2.0.2
+
+# Background Tasks
+celery[redis]==5.3.4
+flower==2.0.1
+
+# Monitoring and Logging
+prometheus-client==0.19.0
+structlog==23.2.0
+loguru==0.7.2
+
+# Tracing
+opentelemetry-api==1.21.0
+opentelemetry-sdk==1.21.0
+opentelemetry-instrumentation-fastapi==0.42b0
+opentelemetry-instrumentation-sqlalchemy==0.42b0
+opentelemetry-instrumentation-redis==0.42b0
+opentelemetry-exporter-jaeger==1.21.0
+
+# API Documentation
+python-markdown==3.5.1
+
+# File Processing
+python-magic==0.4.27
+Pillow==10.1.0
+
+# Email
+jinja2==3.1.2
+premailer==3.10.0
+
+# Cryptography
+cryptography==41.0.8
+
+# JSON Processing
+orjson==3.9.10
+ujson==5.8.0
+
+# Validation and Schema
+jsonschema==4.20.0
+marshmallow==3.20.1
+
+# Rate Limiting
+slowapi==0.1.9
+
+# CORS
+fastapi-cors==0.0.6
+
+# WebSocket
+websockets==12.0
+
+# Health Checks
+healthcheck==1.3.3
+
+# Utilities
+python-slugify==8.0.1
+phonenumbers==8.13.26
+validators==0.22.0
+
+# Development and Testing Dependencies (optional)
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+httpx-mock==0.1.0
+factory-boy==3.3.0
+faker==20.1.0
+
+# Code Quality
+black==23.11.0
+isort==5.12.0
+flake8==6.1.0
+mypy==1.7.1
+bandit==1.7.5
+
+# Performance
+pymemcache==4.0.0
+cachetools==5.3.2
+
+# Task Queue
+rq==1.15.1
+
+# Timezone
+pytz==2023.3.post1
+
+# AWS SDK (if using AWS services)
+boto3==1.34.0
+botocore==1.34.0
+
+# Google Cloud SDK (if using GCP services)
+google-cloud-storage==2.10.0
+google-cloud-bigquery==3.13.0
