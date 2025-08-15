@@ -1,0 +1,222 @@
+@import 'tailwindcss/base';
+@import 'tailwindcss/components';
+@import 'tailwindcss/utilities';
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222.2 84% 4.9%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96%;
+    --accent-foreground: 222.2 84% 4.9%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 221.2 83.2% 53.3%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 84% 4.9%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 224.3 76.3% 94.1%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Custom CSS for heatmap visualizations */
+.heatmap-container {
+  position: relative;
+  overflow: hidden;
+}
+
+.heatmap-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.heatmap-dot {
+  position: absolute;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+.heatmap-click {
+  background: radial-gradient(circle, rgba(239, 68, 68, 0.8) 0%, rgba(239, 68, 68, 0.3) 50%, transparent 100%);
+}
+
+.heatmap-scroll {
+  background: linear-gradient(to bottom, 
+    rgba(6, 182, 212, 0.1) 0%, 
+    rgba(6, 182, 212, 0.3) 20%, 
+    rgba(245, 158, 11, 0.3) 50%, 
+    rgba(239, 68, 68, 0.3) 80%, 
+    rgba(220, 38, 38, 0.1) 100%);
+}
+
+.heatmap-hover {
+  background: radial-gradient(ellipse, rgba(16, 185, 129, 0.4) 0%, rgba(16, 185, 129, 0.1) 70%, transparent 100%);
+}
+
+/* Intensity levels for heatmap */
+.intensity-cold { 
+  background: rgba(59, 130, 246, 0.3); 
+}
+.intensity-cool { 
+  background: rgba(6, 182, 212, 0.4); 
+}
+.intensity-warm { 
+  background: rgba(245, 158, 11, 0.5); 
+}
+.intensity-hot { 
+  background: rgba(239, 68, 68, 0.6); 
+}
+.intensity-intense { 
+  background: rgba(220, 38, 38, 0.7); 
+}
+
+/* Loading states */
+.heatmap-loading {
+  background: linear-gradient(90deg, 
+    rgba(229, 231, 235, 0.1) 0%, 
+    rgba(229, 231, 235, 0.3) 50%, 
+    rgba(229, 231, 235, 0.1) 100%);
+  background-size: 200% 100%;
+  animation: loading-shimmer 2s ease-in-out infinite;
+}
+
+@keyframes loading-shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+/* Analytics dashboard styles */
+.analytics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1rem;
+}
+
+.metric-card {
+  @apply bg-card border border-border rounded-lg p-6 shadow-sm;
+  transition: all 0.2s ease-in-out;
+}
+
+.metric-card:hover {
+  @apply shadow-md border-primary/20;
+  transform: translateY(-1px);
+}
+
+.metric-value {
+  @apply text-2xl font-bold text-foreground;
+}
+
+.metric-change {
+  @apply text-sm font-medium;
+}
+
+.metric-change.positive {
+  @apply text-green-600 dark:text-green-400;
+}
+
+.metric-change.negative {
+  @apply text-red-600 dark:text-red-400;
+}
+
+.metric-change.neutral {
+  @apply text-muted-foreground;
+}
+
+/* Responsive design utilities */
+@screen sm {
+  .analytics-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@screen lg {
+  .analytics-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@screen xl {
+  .analytics-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+/* Focus states for accessibility */
+*:focus-visible {
+  @apply outline-none ring-2 ring-primary ring-offset-2 ring-offset-background;
+}
+
+/* Print styles */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  
+  body {
+    @apply text-black bg-white;
+  }
+  
+  .heatmap-overlay {
+    opacity: 0.8;
+  }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .heatmap-dot {
+    border: 2px solid currentColor;
+  }
+  
+  .metric-card {
+    @apply border-2;
+  }
+}

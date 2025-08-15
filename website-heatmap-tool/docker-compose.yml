@@ -1,0 +1,332 @@
+version: '3.8'
+
+services:
+  # Databases
+  postgres:
+    image: postgres:15-alpine
+    container_name: heatmap-postgres
+    environment:
+      POSTGRES_DB: heatmap_tool
+      POSTGRES_USER: heatmap_user
+      POSTGRES_PASSWORD: heatmap_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - heatmap-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U heatmap_user -d heatmap_tool"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: heatmap-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - heatmap-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:23.8-alpine
+    container_name: heatmap-clickhouse
+    environment:
+      CLICKHOUSE_DB: analytics
+      CLICKHOUSE_USER: analytics_user
+      CLICKHOUSE_PASSWORD: analytics_password
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./infrastructure/clickhouse/config.xml:/etc/clickhouse-server/config.xml
+      - ./infrastructure/clickhouse/users.xml:/etc/clickhouse-server/users.xml
+      - ./infrastructure/clickhouse/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    networks:
+      - heatmap-network
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Message Queue
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: heatmap-kafka
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: true
+    ports:
+      - "9092:9092"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    networks:
+      - heatmap-network
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    container_name: heatmap-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper/data
+    networks:
+      - heatmap-network
+
+  # Backend Services
+  api-gateway:
+    build: 
+      context: ./backend/api-gateway
+      dockerfile: Dockerfile
+    container_name: heatmap-api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      - NODE_ENV=development
+      - EVENT_COLLECTION_URL=http://event-collection:3001
+      - ANALYTICS_PROCESSING_URL=http://analytics-processing:3002
+      - HEATMAP_GENERATION_URL=http://heatmap-generation:3003
+      - USER_MANAGEMENT_URL=http://user-management:3004
+      - PRIVACY_SERVICE_URL=http://privacy-service:3005
+      - AI_INSIGHTS_URL=http://ai-insights:3006
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - heatmap-network
+    volumes:
+      - ./backend/api-gateway:/app
+      - /app/node_modules
+
+  event-collection:
+    build:
+      context: ./backend/event-collection
+      dockerfile: Dockerfile
+    container_name: heatmap-event-collection
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://heatmap_user:heatmap_password@postgres:5432/heatmap_tool
+      - REDIS_URL=redis://redis:6379
+      - CLICKHOUSE_URL=http://clickhouse:8123
+      - KAFKA_BROKERS=kafka:9092
+    depends_on:
+      - postgres
+      - redis
+      - clickhouse
+      - kafka
+    networks:
+      - heatmap-network
+    volumes:
+      - ./backend/event-collection:/app
+      - /app/node_modules
+
+  analytics-processing:
+    build:
+      context: ./backend/analytics-processing
+      dockerfile: Dockerfile
+    container_name: heatmap-analytics-processing
+    ports:
+      - "3002:3002"
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://heatmap_user:heatmap_password@postgres:5432/heatmap_tool
+      - CLICKHOUSE_URL=http://clickhouse:8123
+      - KAFKA_BROKERS=kafka:9092
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - postgres
+      - clickhouse
+      - kafka
+      - redis
+    networks:
+      - heatmap-network
+    volumes:
+      - ./backend/analytics-processing:/app
+      - /app/node_modules
+
+  heatmap-generation:
+    build:
+      context: ./backend/heatmap-generation
+      dockerfile: Dockerfile
+    container_name: heatmap-heatmap-generation
+    ports:
+      - "3003:3003"
+    environment:
+      - NODE_ENV=development
+      - CLICKHOUSE_URL=http://clickhouse:8123
+      - REDIS_URL=redis://redis:6379
+      - AWS_S3_BUCKET=heatmap-tool-screenshots
+      - AWS_REGION=us-east-1
+    depends_on:
+      - clickhouse
+      - redis
+    networks:
+      - heatmap-network
+    volumes:
+      - ./backend/heatmap-generation:/app
+      - /app/node_modules
+
+  user-management:
+    build:
+      context: ./backend/user-management
+      dockerfile: Dockerfile
+    container_name: heatmap-user-management
+    ports:
+      - "3004:3004"
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://heatmap_user:heatmap_password@postgres:5432/heatmap_tool
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=your-super-secret-jwt-key-change-in-production
+      - STRIPE_SECRET_KEY=sk_test_your_stripe_secret_key
+      - STRIPE_WEBHOOK_SECRET=whsec_your_webhook_secret
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - heatmap-network
+    volumes:
+      - ./backend/user-management:/app
+      - /app/node_modules
+
+  privacy-service:
+    build:
+      context: ./backend/privacy-service
+      dockerfile: Dockerfile
+    container_name: heatmap-privacy-service
+    ports:
+      - "3005:3005"
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://heatmap_user:heatmap_password@postgres:5432/heatmap_tool
+      - CLICKHOUSE_URL=http://clickhouse:8123
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - postgres
+      - clickhouse
+      - redis
+    networks:
+      - heatmap-network
+    volumes:
+      - ./backend/privacy-service:/app
+      - /app/node_modules
+
+  ai-insights:
+    build:
+      context: ./backend/ai-insights
+      dockerfile: Dockerfile
+    container_name: heatmap-ai-insights
+    ports:
+      - "3006:3006"
+    environment:
+      - NODE_ENV=development
+      - CLICKHOUSE_URL=http://clickhouse:8123
+      - REDIS_URL=redis://redis:6379
+      - OPENAI_API_KEY=your-openai-api-key
+      - DATABASE_URL=postgresql://heatmap_user:heatmap_password@postgres:5432/heatmap_tool
+    depends_on:
+      - clickhouse
+      - redis
+      - postgres
+    networks:
+      - heatmap-network
+    volumes:
+      - ./backend/ai-insights:/app
+      - /app/node_modules
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: heatmap-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - NEXT_PUBLIC_API_URL=http://localhost:8080
+      - NEXT_PUBLIC_WS_URL=ws://localhost:8080
+      - NEXT_PUBLIC_TRACKING_URL=http://localhost:8080/track
+    depends_on:
+      - api-gateway
+    networks:
+      - heatmap-network
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+
+  # Monitoring
+  prometheus:
+    image: prom/prometheus:v2.45.0
+    container_name: heatmap-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infrastructure/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - heatmap-network
+
+  grafana:
+    image: grafana/grafana:10.0.0
+    container_name: heatmap-grafana
+    ports:
+      - "3007:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infrastructure/monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - ./infrastructure/monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+    depends_on:
+      - prometheus
+    networks:
+      - heatmap-network
+
+volumes:
+  postgres_data:
+  redis_data:
+  clickhouse_data:
+  kafka_data:
+  zookeeper_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  heatmap-network:
+    driver: bridge

@@ -1,0 +1,63 @@
+{
+  "name": "@heatmap-tool/event-collection",
+  "version": "1.0.0",
+  "description": "High-performance event collection service for Website Heatmap Tool",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "nodemon src/server.ts",
+    "build": "tsc && tsc-alias",
+    "start": "node dist/server.js",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "lint": "eslint src --ext .ts",
+    "lint:fix": "eslint src --ext .ts --fix",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "fastify": "^4.25.2",
+    "@fastify/cors": "^8.4.2",
+    "@fastify/helmet": "^11.1.1",
+    "@fastify/rate-limit": "^9.1.0",
+    "@fastify/compress": "^6.5.0",
+    "@fastify/multipart": "^8.0.0",
+    "@fastify/websocket": "^8.3.1",
+    "dotenv": "^16.3.1",
+    "ioredis": "^5.3.2",
+    "kafkajs": "^2.2.4",
+    "@clickhouse/client": "^0.2.5",
+    "pino": "^8.17.2",
+    "pino-pretty": "^10.3.1",
+    "uuid": "^9.0.1",
+    "joi": "^17.11.0",
+    "geoip-lite": "^1.4.8",
+    "ua-parser-js": "^1.0.37",
+    "lru-cache": "^10.1.0",
+    "bull": "^4.12.2",
+    "prometheus-client": "^15.0.0",
+    "mongodb": "^6.3.0",
+    "jsonwebtoken": "^9.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.5",
+    "@types/jest": "^29.5.11",
+    "@types/uuid": "^9.0.7",
+    "@types/ua-parser-js": "^0.7.39",
+    "@types/geoip-lite": "^1.4.4",
+    "@types/jsonwebtoken": "^9.0.5",
+    "@typescript-eslint/eslint-plugin": "^6.19.0",
+    "@typescript-eslint/parser": "^6.19.0",
+    "eslint": "^8.56.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.1",
+    "nodemon": "^3.0.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3",
+    "tsc-alias": "^1.8.8",
+    "supertest": "^6.3.4",
+    "@types/supertest": "^6.0.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
