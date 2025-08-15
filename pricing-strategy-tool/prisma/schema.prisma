@@ -1,0 +1,449 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Account and User Management
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id              String    @id @default(cuid())
+  name            String?
+  email           String    @unique
+  emailVerified   DateTime?
+  image           String?
+  role            UserRole  @default(USER)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  accounts        Account[]
+  sessions        Session[]
+  companies       Company[]
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// Business and Company Management
+model Company {
+  id                String      @id @default(cuid())
+  name              String
+  industry          String?
+  website           String?
+  description       String?
+  targetMarket      String?
+  businessModel     String?
+  companySize       String?
+  revenueRange      String?
+  planType          PlanType    @default(STARTER)
+  planStatus        PlanStatus  @default(TRIAL)
+  trialEndsAt       DateTime?
+  subscriptionId    String?
+  customerId        String?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  // Relations
+  owner             User        @relation(fields: [ownerId], references: [id])
+  ownerId           String
+  products          Product[]
+  competitors       Competitor[]
+  pricingRules      PricingRule[]
+  campaigns         Campaign[]
+  integrations      Integration[]
+  
+  @@index([ownerId])
+}
+
+// Product Management
+model Product {
+  id              String    @id @default(cuid())
+  sku             String
+  name            String
+  description     String?
+  category        String?
+  brand           String?
+  cost            Decimal?  @db.Decimal(10, 2)
+  currentPrice    Decimal   @db.Decimal(10, 2)
+  minPrice        Decimal?  @db.Decimal(10, 2)
+  maxPrice        Decimal?  @db.Decimal(10, 2)
+  targetMargin    Decimal?  @db.Decimal(5, 2)
+  inventoryLevel  Int?
+  weight          Decimal?  @db.Decimal(8, 2)
+  dimensions      Json?
+  tags            String[]
+  isActive        Boolean   @default(true)
+  marketplaceUrls Json?     // Store URLs for different marketplaces
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relations
+  company         Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyId       String
+  priceHistory    PriceHistory[]
+  recommendations Recommendation[]
+  abTests         ABTest[]
+  bundleItems     BundleItem[]
+  
+  @@unique([companyId, sku])
+  @@index([companyId])
+  @@index([category])
+}
+
+// Competitor Management
+model Competitor {
+  id                String           @id @default(cuid())
+  name              String
+  website           String
+  description       String?
+  marketPosition    String?
+  monitoringStatus  MonitoringStatus @default(ACTIVE)
+  scrapeFrequency   Int              @default(24) // hours
+  lastScrapedAt     DateTime?
+  isActive          Boolean          @default(true)
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  // Relations
+  company           Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyId         String
+  priceHistory      PriceHistory[]
+  
+  @@index([companyId])
+}
+
+// Price History and Tracking
+model PriceHistory {
+  id              String     @id @default(cuid())
+  price           Decimal    @db.Decimal(10, 2)
+  currency        String     @default("USD")
+  inStock         Boolean    @default(true)
+  url             String?
+  marketplace     String?
+  discountPercent Decimal?   @db.Decimal(5, 2)
+  shippingCost    Decimal?   @db.Decimal(8, 2)
+  rating          Decimal?   @db.Decimal(3, 2)
+  reviewCount     Int?
+  timestamp       DateTime   @default(now())
+
+  // Relations
+  product         Product?   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId       String?
+  competitor      Competitor? @relation(fields: [competitorId], references: [id], onDelete: Cascade)
+  competitorId    String?
+  
+  @@index([productId, timestamp])
+  @@index([competitorId, timestamp])
+  @@index([timestamp])
+}
+
+// Pricing Rules and Automation
+model PricingRule {
+  id            String     @id @default(cuid())
+  name          String
+  description   String?
+  conditions    Json       // Store complex conditions as JSON
+  actions       Json       // Store actions to take
+  priority      Int        @default(0)
+  isActive      Boolean    @default(true)
+  triggerType   TriggerType @default(MANUAL)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  // Relations
+  company       Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyId     String
+  
+  @@index([companyId])
+}
+
+// AI Recommendations
+model Recommendation {
+  id                String             @id @default(cuid())
+  suggestedPrice    Decimal            @db.Decimal(10, 2)
+  currentPrice      Decimal            @db.Decimal(10, 2)
+  confidenceScore   Decimal            @db.Decimal(3, 2) // 0-100
+  expectedRevenue   Decimal?           @db.Decimal(10, 2)
+  expectedProfit    Decimal?           @db.Decimal(10, 2)
+  reasoning         String?
+  algorithm         String?            // Which algorithm generated this
+  status            RecommendationStatus @default(PENDING)
+  appliedAt         DateTime?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  // Relations
+  product           Product            @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId         String
+  
+  @@index([productId])
+  @@index([status])
+}
+
+// A/B Testing
+model ABTest {
+  id              String      @id @default(cuid())
+  name            String
+  description     String?
+  hypothesis      String?
+  variantA        Json        // Control group settings
+  variantB        Json        // Test group settings
+  trafficSplit    Decimal     @db.Decimal(3, 2) @default(50.00) // Percentage for variant B
+  status          TestStatus  @default(DRAFT)
+  startDate       DateTime?
+  endDate         DateTime?
+  significance    Decimal?    @db.Decimal(5, 4) // Statistical significance
+  winner          String?     // 'A', 'B', or 'INCONCLUSIVE'
+  results         Json?       // Store detailed results
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  // Relations
+  product         Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId       String
+  metrics         ABTestMetric[]
+  
+  @@index([productId])
+}
+
+model ABTestMetric {
+  id            String   @id @default(cuid())
+  variant       String   // 'A' or 'B'
+  metric        String   // 'revenue', 'conversions', 'visitors', etc.
+  value         Decimal  @db.Decimal(12, 4)
+  date          DateTime @default(now())
+
+  // Relations
+  abTest        ABTest   @relation(fields: [abTestId], references: [id], onDelete: Cascade)
+  abTestId      String
+  
+  @@index([abTestId, date])
+}
+
+// Product Bundles
+model Bundle {
+  id            String       @id @default(cuid())
+  name          String
+  description   String?
+  bundlePrice   Decimal      @db.Decimal(10, 2)
+  discountType  DiscountType @default(PERCENTAGE)
+  discountValue Decimal      @db.Decimal(5, 2)
+  isActive      Boolean      @default(true)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  items         BundleItem[]
+}
+
+model BundleItem {
+  id          String  @id @default(cuid())
+  quantity    Int     @default(1)
+
+  // Relations
+  bundle      Bundle  @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+  bundleId    String
+  product     Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId   String
+  
+  @@unique([bundleId, productId])
+}
+
+// Campaign Management
+model Campaign {
+  id            String         @id @default(cuid())
+  name          String
+  description   String?
+  type          CampaignType
+  startDate     DateTime
+  endDate       DateTime
+  discount      Decimal?       @db.Decimal(5, 2)
+  conditions    Json?          // Targeting conditions
+  status        CampaignStatus @default(DRAFT)
+  results       Json?          // Campaign performance data
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  // Relations
+  company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyId     String
+  
+  @@index([companyId])
+}
+
+// Integration Management
+model Integration {
+  id            String            @id @default(cuid())
+  platform      IntegrationType
+  credentials   Json              // Encrypted API keys and tokens
+  settings      Json?             // Platform-specific settings
+  status        IntegrationStatus @default(ACTIVE)
+  lastSyncAt    DateTime?
+  syncFrequency Int               @default(24) // hours
+  isActive      Boolean           @default(true)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  // Relations
+  company       Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyId     String
+  
+  @@unique([companyId, platform])
+  @@index([companyId])
+}
+
+// Analytics and Reporting
+model AnalyticsEvent {
+  id          String   @id @default(cuid())
+  eventType   String   // 'price_change', 'recommendation_applied', etc.
+  entityType  String   // 'product', 'recommendation', etc.
+  entityId    String
+  metadata    Json?    // Additional event data
+  timestamp   DateTime @default(now())
+  companyId   String
+  
+  @@index([companyId, eventType])
+  @@index([timestamp])
+}
+
+// Market Research
+model MarketInsight {
+  id          String   @id @default(cuid())
+  category    String
+  insight     String
+  confidence  Decimal  @db.Decimal(3, 2) // 0-100
+  source      String?  // Data source
+  impact      String?  // Potential business impact
+  tags        String[]
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime?
+  
+  @@index([category])
+  @@index([createdAt])
+}
+
+// Enums
+enum UserRole {
+  USER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum PlanType {
+  STARTER
+  GROWTH
+  SCALE
+  ENTERPRISE
+}
+
+enum PlanStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  SUSPENDED
+}
+
+enum MonitoringStatus {
+  ACTIVE
+  PAUSED
+  ERROR
+  RATE_LIMITED
+}
+
+enum TriggerType {
+  MANUAL
+  SCHEDULE
+  EVENT
+  CONDITION
+}
+
+enum RecommendationStatus {
+  PENDING
+  APPROVED
+  APPLIED
+  REJECTED
+  EXPIRED
+}
+
+enum TestStatus {
+  DRAFT
+  RUNNING
+  COMPLETED
+  CANCELLED
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
+}
+
+enum CampaignType {
+  FLASH_SALE
+  SEASONAL
+  CLEARANCE
+  BULK_DISCOUNT
+  LOYALTY_REWARD
+}
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  RUNNING
+  COMPLETED
+  CANCELLED
+}
+
+enum IntegrationType {
+  SHOPIFY
+  AMAZON
+  EBAY
+  WOOCOMMERCE
+  MAGENTO
+  GOOGLE_SHOPPING
+  FACEBOOK_SHOP
+  ETSY
+}
+
+enum IntegrationStatus {
+  ACTIVE
+  ERROR
+  DISCONNECTED
+  SYNCING
+}
