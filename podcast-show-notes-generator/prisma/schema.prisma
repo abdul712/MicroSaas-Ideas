@@ -1,0 +1,293 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id               String    @id @default(cuid())
+  name             String?
+  email            String    @unique
+  emailVerified    DateTime?
+  image            String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  
+  // Subscription info
+  subscriptionPlan SubscriptionPlan @default(STARTER)
+  stripeCustomerId String?           @unique
+  subscriptionId   String?           @unique
+  currentPeriodEnd DateTime?
+  isActive         Boolean           @default(false)
+  
+  // Usage tracking
+  monthlyCredits   Int               @default(10) // Hours of transcription
+  creditsUsed      Int               @default(0)
+  lastResetDate    DateTime          @default(now())
+
+  accounts Account[]
+  sessions Session[]
+  podcasts Podcast[]
+  episodes Episode[]
+  exports  Export[]
+  
+  @@map("users")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+enum SubscriptionPlan {
+  STARTER      // $19/month - 10 hours
+  PROFESSIONAL // $39/month - 50 hours  
+  ENTERPRISE   // $99/month - unlimited
+}
+
+model Podcast {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  description String?
+  rssUrl      String?
+  websiteUrl  String?
+  imageUrl    String?
+  category    String?
+  language    String   @default("en")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  episodes Episode[]
+  
+  @@map("podcasts")
+}
+
+model Episode {
+  id              String            @id @default(cuid())
+  podcastId       String
+  userId          String
+  title           String
+  description     String?
+  audioUrl        String
+  audioFileName   String
+  audioFileSize   Int
+  audioMimeType   String
+  duration        Int?              // Duration in seconds
+  publishedAt     DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  
+  // Processing status
+  processingStatus ProcessingStatus @default(PENDING)
+  processingError  String?
+  
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  podcast      Podcast       @relation(fields: [podcastId], references: [id], onDelete: Cascade)
+  transcription Transcription?
+  showNotes     ShowNotes?
+  exports       Export[]
+  
+  @@map("episodes")
+}
+
+enum ProcessingStatus {
+  PENDING
+  UPLOADING
+  TRANSCRIBING
+  GENERATING
+  COMPLETED
+  FAILED
+}
+
+model Transcription {
+  id              String   @id @default(cuid())
+  episodeId       String   @unique
+  fullText        String   @db.Text
+  segments        Json     // Array of segments with timestamps and speaker info
+  language        String
+  confidenceScore Float
+  processingTime  Int      // Seconds to process
+  provider        String   // 'openai' or 'assemblyai'
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  
+  @@map("transcriptions")
+}
+
+model ShowNotes {
+  id               String   @id @default(cuid())
+  episodeId        String   @unique
+  summary          String   @db.Text
+  keyPoints        Json     // Array of key points
+  timestamps       Json     // Array of timestamp objects
+  quotes           Json     // Array of notable quotes
+  linksAndResources Json    // Array of links mentioned
+  socialContent    Json     // Generated social media posts
+  seoMetadata      Json     // SEO-optimized metadata
+  templateUsed     String
+  generationPrompt String   @db.Text
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  episode Episode  @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  exports Export[]
+  
+  @@map("show_notes")
+}
+
+model Export {
+  id           String     @id @default(cuid())
+  showNotesId  String
+  userId       String
+  episodeId    String
+  format       ExportFormat
+  destination  String?    // URL or platform name
+  content      String     @db.Text
+  exportedAt   DateTime   @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  episode   Episode   @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+  showNotes ShowNotes @relation(fields: [showNotesId], references: [id], onDelete: Cascade)
+  
+  @@map("exports")
+}
+
+enum ExportFormat {
+  MARKDOWN
+  HTML
+  PDF
+  JSON
+  WORDPRESS
+  GHOST
+  BUFFER
+  TWITTER
+}
+
+model ProcessingJob {
+  id         String           @id @default(cuid())
+  episodeId  String
+  jobType    ProcessingJobType
+  status     JobStatus        @default(QUEUED)
+  progress   Int              @default(0)
+  startedAt  DateTime?
+  completedAt DateTime?
+  error      String?
+  metadata   Json?
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+  
+  @@map("processing_jobs")
+}
+
+enum ProcessingJobType {
+  TRANSCRIPTION
+  SHOW_NOTES_GENERATION
+  EXPORT
+}
+
+enum JobStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+model Template {
+  id          String   @id @default(cuid())
+  userId      String?  // null for system templates
+  name        String
+  description String?
+  category    String   // 'interview', 'solo', 'comedy', etc.
+  structure   Json     // Template structure definition
+  prompts     Json     // AI generation prompts
+  styling     Json     // Styling preferences
+  isDefault   Boolean  @default(false)
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@map("templates")
+}
+
+model Integration {
+  id           String           @id @default(cuid())
+  userId       String
+  platform     IntegrationType
+  credentials  Json             // Encrypted credentials
+  settings     Json             // Integration settings
+  isActive     Boolean          @default(true)
+  lastSyncAt   DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  
+  @@unique([userId, platform])
+  @@map("integrations")
+}
+
+enum IntegrationType {
+  SPOTIFY_PODCASTERS
+  APPLE_PODCASTS
+  BUZZSPROUT
+  LIBSYN
+  ANCHOR
+  WORDPRESS
+  GHOST
+  BUFFER
+  HOOTSUITE
+  CONVERTKIT
+  MAILCHIMP
+}
+
+model Analytics {
+  id           String   @id @default(cuid())
+  userId       String
+  episodeId    String?
+  eventType    String   // 'transcription_completed', 'export_created', etc.
+  eventData    Json
+  timestamp    DateTime @default(now())
+  
+  @@index([userId, timestamp])
+  @@index([episodeId, timestamp])
+  @@map("analytics")
+}
