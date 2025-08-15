@@ -1,0 +1,449 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Authentication models
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id                String            @id @default(cuid())
+  name              String?
+  email             String            @unique
+  emailVerified     DateTime?
+  image             String?
+  role              UserRole          @default(CUSTOMER)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  
+  // Relationships
+  accounts          Account[]
+  sessions          Session[]
+  ownedBusinesses   Business[]        @relation("BusinessOwner")
+  staffMemberships  StaffMember[]
+  customerProfiles  CustomerProfile[]
+  loyaltyMemberships LoyaltyMembership[]
+  pointTransactions PointTransaction[]
+  rewardRedemptions RewardRedemption[]
+  activityLogs      ActivityLog[]
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// Core business models
+model Business {
+  id              String              @id @default(cuid())
+  name            String
+  email           String
+  phone           String?
+  address         String?
+  city            String?
+  state           String?
+  zipCode         String?
+  country         String              @default("US")
+  website         String?
+  industry        BusinessIndustry    @default(RETAIL)
+  logo            String?
+  primaryColor    String              @default("#3B82F6")
+  secondaryColor  String              @default("#EF4444")
+  timezone        String              @default("America/New_York")
+  plan            SubscriptionPlan    @default(STARTER)
+  status          BusinessStatus      @default(ACTIVE)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  
+  // Owner relationship
+  ownerId         String
+  owner           User                @relation("BusinessOwner", fields: [ownerId], references: [id])
+  
+  // Relationships
+  loyaltyPrograms LoyaltyProgram[]
+  staff           StaffMember[]
+  customers       CustomerProfile[]
+  campaigns       Campaign[]
+  activityLogs    ActivityLog[]
+  
+  @@index([ownerId])
+}
+
+model StaffMember {
+  id          String     @id @default(cuid())
+  businessId  String
+  userId      String
+  role        StaffRole  @default(STAFF)
+  permissions Json       @default("{}")
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  
+  business    Business   @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([businessId, userId])
+  @@index([businessId])
+  @@index([userId])
+}
+
+// Customer models
+model CustomerProfile {
+  id                String              @id @default(cuid())
+  businessId        String
+  userId            String?
+  email             String?
+  phone             String?
+  firstName         String
+  lastName          String?
+  birthday          DateTime?
+  preferredLanguage String              @default("en")
+  marketingOptIn    Boolean             @default(true)
+  smsOptIn          Boolean             @default(false)
+  tags              String[]            @default([])
+  notes             String?
+  totalSpent        Float               @default(0)
+  visitCount        Int                 @default(0)
+  lastVisit         DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  
+  business          Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user              User?               @relation(fields: [userId], references: [id])
+  loyaltyMemberships LoyaltyMembership[]
+  pointTransactions PointTransaction[]
+  rewardRedemptions RewardRedemption[]
+  
+  @@unique([businessId, email])
+  @@unique([businessId, phone])
+  @@index([businessId])
+  @@index([userId])
+}
+
+// Loyalty program models
+model LoyaltyProgram {
+  id                String              @id @default(cuid())
+  businessId        String
+  name              String
+  description       String?
+  isActive          Boolean             @default(true)
+  programType       ProgramType         @default(POINTS)
+  pointValue        Float               @default(0.01) // 1 point = $0.01
+  earningRules      Json                @default("[]")
+  tierSystem        Json                @default("{}")
+  expirationPolicy  Json                @default("{}")
+  settings          Json                @default("{}")
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  
+  business          Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  memberships       LoyaltyMembership[]
+  rewards           Reward[]
+  tiers             LoyaltyTier[]
+  campaigns         Campaign[]
+  
+  @@index([businessId])
+}
+
+model LoyaltyMembership {
+  id              String              @id @default(cuid())
+  programId       String
+  customerId      String
+  userId          String?
+  memberNumber    String              @unique
+  currentPoints   Int                 @default(0)
+  lifetimePoints  Int                 @default(0)
+  currentTier     String?
+  joinedAt        DateTime            @default(now())
+  lastActivity    DateTime            @default(now())
+  isActive        Boolean             @default(true)
+  
+  program         LoyaltyProgram      @relation(fields: [programId], references: [id], onDelete: Cascade)
+  customer        CustomerProfile     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  user            User?               @relation(fields: [userId], references: [id])
+  pointTransactions PointTransaction[]
+  rewardRedemptions RewardRedemption[]
+  
+  @@unique([programId, customerId])
+  @@index([programId])
+  @@index([customerId])
+  @@index([userId])
+}
+
+model LoyaltyTier {
+  id            String         @id @default(cuid())
+  programId     String
+  name          String
+  description   String?
+  threshold     Int            // Points required to reach this tier
+  benefits      Json           @default("{}")
+  color         String         @default("#3B82F6")
+  icon          String?
+  isActive      Boolean        @default(true)
+  sortOrder     Int            @default(0)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  
+  program       LoyaltyProgram @relation(fields: [programId], references: [id], onDelete: Cascade)
+  
+  @@unique([programId, name])
+  @@index([programId])
+}
+
+// Rewards and redemption models
+model Reward {
+  id              String              @id @default(cuid())
+  programId       String
+  name            String
+  description     String
+  rewardType      RewardType          @default(DISCOUNT)
+  pointCost       Int
+  dollarValue     Float?
+  discountPercent Float?
+  maxRedemptions  Int?
+  totalRedeemed   Int                 @default(0)
+  isActive        Boolean             @default(true)
+  validFrom       DateTime?
+  validUntil      DateTime?
+  termsConditions String?
+  image           String?
+  sortOrder       Int                 @default(0)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  
+  program         LoyaltyProgram      @relation(fields: [programId], references: [id], onDelete: Cascade)
+  redemptions     RewardRedemption[]
+  
+  @@index([programId])
+}
+
+model RewardRedemption {
+  id            String              @id @default(cuid())
+  membershipId  String
+  rewardId      String
+  customerId    String
+  userId        String?
+  pointsUsed    Int
+  dollarValue   Float?
+  status        RedemptionStatus    @default(PENDING)
+  redeemedAt    DateTime            @default(now())
+  usedAt        DateTime?
+  expiresAt     DateTime?
+  notes         String?
+  
+  membership    LoyaltyMembership   @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  reward        Reward              @relation(fields: [rewardId], references: [id])
+  customer      CustomerProfile     @relation(fields: [customerId], references: [id])
+  user          User?               @relation(fields: [userId], references: [id])
+  
+  @@index([membershipId])
+  @@index([rewardId])
+  @@index([customerId])
+  @@index([userId])
+}
+
+// Points and transaction models
+model PointTransaction {
+  id            String              @id @default(cuid())
+  membershipId  String
+  customerId    String
+  userId        String?
+  transactionType TransactionType
+  points        Int
+  description   String
+  orderId       String?
+  orderAmount   Float?
+  multiplier    Float               @default(1.0)
+  campaignId    String?
+  metadata      Json                @default("{}")
+  createdAt     DateTime            @default(now())
+  
+  membership    LoyaltyMembership   @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  customer      CustomerProfile     @relation(fields: [customerId], references: [id])
+  user          User?               @relation(fields: [userId], references: [id])
+  campaign      Campaign?           @relation(fields: [campaignId], references: [id])
+  
+  @@index([membershipId])
+  @@index([customerId])
+  @@index([userId])
+  @@index([campaignId])
+  @@index([createdAt])
+}
+
+// Campaign and marketing models
+model Campaign {
+  id                String              @id @default(cuid())
+  businessId        String
+  programId         String?
+  name              String
+  description       String
+  campaignType      CampaignType        @default(POINTS_MULTIPLIER)
+  status            CampaignStatus      @default(DRAFT)
+  targetAudience    Json                @default("{}")
+  rules             Json                @default("{}")
+  schedule          Json                @default("{}")
+  startDate         DateTime?
+  endDate           DateTime?
+  isActive          Boolean             @default(false)
+  totalParticipants Int                 @default(0)
+  totalPointsAwarded Int                @default(0)
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  
+  business          Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  program           LoyaltyProgram?     @relation(fields: [programId], references: [id])
+  pointTransactions PointTransaction[]
+  
+  @@index([businessId])
+  @@index([programId])
+}
+
+// Activity and audit models
+model ActivityLog {
+  id          String        @id @default(cuid())
+  businessId  String
+  userId      String?
+  entityType  String        // "customer", "reward", "program", etc.
+  entityId    String
+  action      String        // "created", "updated", "deleted", "redeemed", etc.
+  description String
+  metadata    Json          @default("{}")
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime      @default(now())
+  
+  business    Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user        User?         @relation(fields: [userId], references: [id])
+  
+  @@index([businessId])
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+// Enums
+enum UserRole {
+  CUSTOMER
+  BUSINESS_OWNER
+  STAFF
+  ADMIN
+}
+
+enum BusinessIndustry {
+  RESTAURANT
+  RETAIL
+  SALON_SPA
+  FITNESS
+  SERVICES
+  HEALTHCARE
+  AUTOMOTIVE
+  ENTERTAINMENT
+  OTHER
+}
+
+enum BusinessStatus {
+  ACTIVE
+  SUSPENDED
+  CANCELLED
+}
+
+enum SubscriptionPlan {
+  STARTER
+  GROWTH
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+enum StaffRole {
+  STAFF
+  MANAGER
+  ADMIN
+}
+
+enum ProgramType {
+  POINTS
+  CASHBACK
+  VISITS
+  TIER_BASED
+}
+
+enum RewardType {
+  DISCOUNT
+  FREE_ITEM
+  GIFT_CARD
+  EXPERIENCE
+  CASHBACK
+}
+
+enum RedemptionStatus {
+  PENDING
+  CONFIRMED
+  USED
+  CANCELLED
+  EXPIRED
+}
+
+enum TransactionType {
+  EARNED_PURCHASE
+  EARNED_SIGNUP
+  EARNED_REFERRAL
+  EARNED_REVIEW
+  EARNED_BIRTHDAY
+  EARNED_CAMPAIGN
+  REDEEMED
+  EXPIRED
+  ADJUSTED
+}
+
+enum CampaignType {
+  POINTS_MULTIPLIER
+  BONUS_POINTS
+  SPECIAL_REWARD
+  REFERRAL_BONUS
+  BIRTHDAY_SPECIAL
+  TIER_UPGRADE
+}
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  ACTIVE
+  PAUSED
+  COMPLETED
+  CANCELLED
+}

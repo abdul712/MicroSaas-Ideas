@@ -1,0 +1,119 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: loyalty-postgres
+    environment:
+      POSTGRES_DB: loyalty_program
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - loyalty-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d loyalty_program"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: loyalty-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - loyalty-network
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass redispassword
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Next.js Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    container_name: loyalty-app
+    environment:
+      # Database
+      DATABASE_URL: "postgresql://postgres:postgres@postgres:5432/loyalty_program"
+      
+      # Redis
+      REDIS_URL: "redis://:redispassword@redis:6379"
+      
+      # NextAuth
+      NEXTAUTH_SECRET: "your-super-secret-jwt-secret-here"
+      NEXTAUTH_URL: "http://localhost:3000"
+      
+      # OAuth Providers (configure with your keys)
+      GOOGLE_CLIENT_ID: "your-google-client-id"
+      GOOGLE_CLIENT_SECRET: "your-google-client-secret"
+      
+      # Email Service
+      RESEND_API_KEY: "your-resend-api-key"
+      
+      # App Configuration
+      NEXT_PUBLIC_APP_URL: "http://localhost:3000"
+      NODE_ENV: "production"
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - loyalty-network
+    restart: unless-stopped
+    volumes:
+      - ./uploads:/app/uploads
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Development only - Prisma Studio
+  prisma-studio:
+    image: node:18-alpine
+    container_name: loyalty-prisma-studio
+    working_dir: /app
+    environment:
+      DATABASE_URL: "postgresql://postgres:postgres@postgres:5432/loyalty_program"
+    volumes:
+      - .:/app
+    ports:
+      - "5555:5555"
+    networks:
+      - loyalty-network
+    command: sh -c "npm install -g prisma && prisma studio --hostname 0.0.0.0"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - development
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  loyalty-network:
+    driver: bridge
