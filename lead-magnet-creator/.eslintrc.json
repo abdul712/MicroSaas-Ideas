@@ -1,0 +1,15 @@
+{
+  "extends": ["next/core-web-vitals", "plugin:testing-library/react"],
+  "plugins": ["testing-library", "jest-dom"],
+  "rules": {
+    "prefer-const": "error",
+    "no-var": "error",
+    "no-unused-vars": "warn",
+    "@typescript-eslint/no-unused-vars": "warn",
+    "react-hooks/exhaustive-deps": "warn"
+  },
+  "env": {
+    "jest": true,
+    "node": true
+  }
+}
