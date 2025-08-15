@@ -1,0 +1,237 @@
+# RestockRadar - Enterprise AI-Powered Inventory Management Platform
+# Docker Compose Configuration for Development and Production
+
+version: '3.8'
+
+services:
+  # Main Application
+  app:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://restockradar:password@postgres:5432/restockradar
+      - REDIS_URL=redis://redis:6379
+      - CLICKHOUSE_URL=http://clickhouse:8123
+      - NEXTAUTH_SECRET=your-super-secret-key-here
+      - NEXTAUTH_URL=http://localhost:3000
+    depends_on:
+      - postgres
+      - redis
+      - clickhouse
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/.next
+    networks:
+      - restockradar
+
+  # PostgreSQL Database - Primary transactional database
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: restockradar
+      POSTGRES_USER: restockradar
+      POSTGRES_PASSWORD: password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    networks:
+      - restockradar
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U restockradar"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Redis - Caching and session management
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --requirepass redispassword
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - restockradar
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # ClickHouse - Analytics and time-series data
+  clickhouse:
+    image: clickhouse/clickhouse-server:23-alpine
+    environment:
+      CLICKHOUSE_DB: analytics
+      CLICKHOUSE_USER: analytics
+      CLICKHOUSE_PASSWORD: analyticspassword
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./database/clickhouse:/docker-entrypoint-initdb.d
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    networks:
+      - restockradar
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # ML Service - AI/ML processing (Python FastAPI)
+  ml-service:
+    build:
+      context: ./ml-service
+      dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL=postgresql://restockradar:password@postgres:5432/restockradar
+      - CLICKHOUSE_URL=http://clickhouse:8123
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - postgres
+      - clickhouse
+      - redis
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./ml-service:/app
+      - ml_models:/app/models
+    networks:
+      - restockradar
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Message Queue (Apache Kafka) - Event streaming
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper
+    networks:
+      - restockradar
+
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: true
+    volumes:
+      - kafka_data:/var/lib/kafka
+    ports:
+      - "9092:9092"
+    networks:
+      - restockradar
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Monitoring Stack
+  # Prometheus - Metrics collection
+  prometheus:
+    image: prom/prometheus:latest
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - restockradar
+
+  # Grafana - Metrics visualization
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+    ports:
+      - "3001:3000"
+    networks:
+      - restockradar
+
+  # Development Tools
+  # Mailhog - Email testing in development
+  mailhog:
+    image: mailhog/mailhog:latest
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    networks:
+      - restockradar
+
+  # MinIO - S3-compatible storage for development
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    networks:
+      - restockradar
+
+# Production overrides
+  # Nginx - Load balancer and reverse proxy (production)
+  nginx:
+    image: nginx:alpine
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/ssl:/etc/nginx/ssl
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - app
+    networks:
+      - restockradar
+    profiles:
+      - production
+
+networks:
+  restockradar:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  clickhouse_data:
+  ml_models:
+  zookeeper_data:
+  kafka_data:
+  prometheus_data:
+  grafana_data:
+  minio_data:
