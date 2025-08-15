@@ -1,0 +1,674 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// NextAuth.js required models
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// Core application models
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  role          UserRole  @default(USER)
+  
+  // Organization membership
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  
+  // Personal settings
+  timezone      String    @default("UTC")
+  preferences   Json?     @default("{}")
+  
+  // Timestamps
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  lastLoginAt   DateTime?
+
+  // Relations
+  accounts              Account[]
+  sessions              Session[]
+  organizationsOwned    Organization[] @relation("OrganizationOwner")
+  emailSequences        EmailSequence[]
+  emailTemplates        EmailTemplate[]
+  contacts              Contact[]
+  webhooks              Webhook[]
+  integrations          Integration[]
+  activityLogs          ActivityLog[]
+
+  @@map("users")
+}
+
+model Organization {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  domain      String?
+  
+  // Owner and members
+  ownerId     String
+  owner       User     @relation("OrganizationOwner", fields: [ownerId], references: [id])
+  members     User[]
+  
+  // Email configuration
+  emailConfig Json?    @default("{}")
+  
+  // Subscription and billing
+  plan        PlanType @default(FREE)
+  billingEmail String?
+  
+  // Usage limits and tracking
+  monthlyEmailsSent   Int      @default(0)
+  monthlyEmailsLimit  Int      @default(100)
+  contactsCount       Int      @default(0)
+  contactsLimit       Int      @default(100)
+  
+  // Timestamps
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  emailSequences   EmailSequence[]
+  emailTemplates   EmailTemplate[]
+  contacts         Contact[]
+  contactLists     ContactList[]
+  webhooks         Webhook[]
+  integrations     Integration[]
+  emailSends       EmailSend[]
+  analytics        EmailAnalytics[]
+  activityLogs     ActivityLog[]
+
+  @@map("organizations")
+}
+
+model ContactList {
+  id             String   @id @default(cuid())
+  name           String
+  description    String?
+  
+  // Organization
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  // Configuration
+  isDefault      Boolean  @default(false)
+  tags           String[] @default([])
+  
+  // Timestamps
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  contacts       ContactListMember[]
+
+  @@map("contact_lists")
+}
+
+model Contact {
+  id          String   @id @default(cuid())
+  email       String
+  firstName   String?
+  lastName    String?
+  company     String?
+  jobTitle    String?
+  phone       String?
+  website     String?
+  
+  // Organization and owner
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id])
+  
+  // Engagement and status
+  status          ContactStatus @default(ACTIVE)
+  engagementScore Int           @default(0)
+  lastEngagedAt   DateTime?
+  unsubscribedAt  DateTime?
+  
+  // Custom fields and metadata
+  customFields    Json?         @default("{}")
+  tags            String[]      @default([])
+  source          String?       // How they were added
+  notes           String?
+  
+  // Timestamps
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  // Relations
+  lists           ContactListMember[]
+  sequenceEnrollments SequenceEnrollment[]
+  emailSends      EmailSend[]
+  emailEvents     EmailEvent[]
+
+  @@unique([email, organizationId])
+  @@index([organizationId, status])
+  @@index([engagementScore])
+  @@map("contacts")
+}
+
+model ContactListMember {
+  id           String      @id @default(cuid())
+  contactId    String
+  contact      Contact     @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  listId       String
+  list         ContactList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  addedAt      DateTime    @default(now())
+
+  @@unique([contactId, listId])
+  @@map("contact_list_members")
+}
+
+model EmailTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  subject     String
+  bodyHtml    String   @db.Text
+  bodyText    String?  @db.Text
+  
+  // Organization and owner
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id])
+  
+  // Template configuration
+  isPublic       Boolean      @default(false)
+  category       String?
+  tags           String[]     @default([])
+  variables      Json?        @default("[]") // Available variables
+  
+  // AI and optimization
+  aiGenerated    Boolean      @default(false)
+  aiPrompt       String?      @db.Text
+  
+  // Performance tracking
+  openRate       Float?       @default(0)
+  clickRate      Float?       @default(0)
+  replyRate      Float?       @default(0)
+  
+  // Timestamps
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  // Relations
+  sequenceSteps  SequenceStep[]
+  emailSends     EmailSend[]
+  abTests        AbTest[]     @relation("TemplateA")
+  abTestsB       AbTest[]     @relation("TemplateB")
+
+  @@index([organizationId, category])
+  @@map("email_templates")
+}
+
+model EmailSequence {
+  id           String        @id @default(cuid())
+  name         String
+  description  String?
+  
+  // Organization and owner
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id])
+  
+  // Sequence configuration
+  status       SequenceStatus @default(DRAFT)
+  triggerType  TriggerType   @default(MANUAL)
+  triggerConfig Json?        @default("{}")
+  
+  // Automation settings
+  isActive     Boolean       @default(false)
+  stopOnReply  Boolean       @default(true)
+  stopOnClick  Boolean       @default(false)
+  
+  // Performance tracking
+  enrolledCount Int          @default(0)
+  completedCount Int         @default(0)
+  openRate      Float?       @default(0)
+  clickRate     Float?       @default(0)
+  replyRate     Float?       @default(0)
+  
+  // Timestamps
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  // Relations
+  steps         SequenceStep[]
+  enrollments   SequenceEnrollment[]
+
+  @@index([organizationId, status])
+  @@map("email_sequences")
+}
+
+model SequenceStep {
+  id          String   @id @default(cuid())
+  sequenceId  String
+  sequence    EmailSequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+  
+  // Step configuration
+  stepOrder   Int
+  stepType    StepType @default(EMAIL)
+  delayDays   Int      @default(0)
+  delayHours  Int      @default(0)
+  
+  // Email template
+  templateId  String?
+  template    EmailTemplate? @relation(fields: [templateId], references: [id])
+  
+  // Conditions and logic
+  conditions  Json?    @default("[]")
+  
+  // Performance tracking
+  sentCount   Int      @default(0)
+  openCount   Int      @default(0)
+  clickCount  Int      @default(0)
+  replyCount  Int      @default(0)
+  
+  // Timestamps
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  enrollments SequenceEnrollment[]
+
+  @@unique([sequenceId, stepOrder])
+  @@map("sequence_steps")
+}
+
+model SequenceEnrollment {
+  id         String            @id @default(cuid())
+  contactId  String
+  contact    Contact           @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  sequenceId String
+  sequence   EmailSequence     @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+  
+  // Enrollment status
+  status     EnrollmentStatus  @default(ACTIVE)
+  currentStepId String?
+  currentStep   SequenceStep?  @relation(fields: [currentStepId], references: [id])
+  
+  // Scheduling
+  nextSendAt DateTime?
+  
+  // Completion tracking
+  completedAt DateTime?
+  pausedAt    DateTime?
+  
+  // Timestamps
+  enrolledAt  DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@unique([contactId, sequenceId])
+  @@index([status, nextSendAt])
+  @@map("sequence_enrollments")
+}
+
+model EmailSend {
+  id           String        @id @default(cuid())
+  
+  // Organization
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  // Recipient and template
+  contactId    String
+  contact      Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  templateId   String
+  template     EmailTemplate @relation(fields: [templateId], references: [id])
+  
+  // Email content (populated from template)
+  subject      String
+  bodyHtml     String       @db.Text
+  bodyText     String?      @db.Text
+  
+  // Send details
+  status       EmailStatus  @default(PENDING)
+  providerId   String?      // External provider message ID
+  provider     EmailProvider @default(SENDGRID)
+  
+  // Tracking
+  sentAt       DateTime?
+  openedAt     DateTime?
+  clickedAt    DateTime?
+  repliedAt    DateTime?
+  bouncedAt    DateTime?
+  
+  // Error handling
+  errorMessage String?      @db.Text
+  retryCount   Int          @default(0)
+  
+  // Timestamps
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  // Relations
+  events       EmailEvent[]
+
+  @@index([organizationId, status])
+  @@index([contactId, sentAt])
+  @@map("email_sends")
+}
+
+model EmailEvent {
+  id        String     @id @default(cuid())
+  emailId   String
+  email     EmailSend  @relation(fields: [emailId], references: [id], onDelete: Cascade)
+  contactId String
+  contact   Contact    @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  
+  // Event details
+  type      EventType
+  timestamp DateTime   @default(now())
+  
+  // Additional data
+  userAgent String?
+  ipAddress String?
+  location  String?
+  url       String?    // For click events
+  
+  // Provider data
+  providerId String?   // External provider event ID
+  metadata   Json?     @default("{}")
+
+  @@index([emailId, type])
+  @@index([contactId, timestamp])
+  @@map("email_events")
+}
+
+model AbTest {
+  id           String        @id @default(cuid())
+  name         String
+  
+  // Test configuration
+  templateAId  String
+  templateA    EmailTemplate @relation("TemplateA", fields: [templateAId], references: [id])
+  templateBId  String
+  templateB    EmailTemplate @relation("TemplateB", fields: [templateBId], references: [id])
+  
+  // Traffic split (percentage for template A)
+  trafficSplit Int           @default(50)
+  
+  // Test status and results
+  status       TestStatus    @default(DRAFT)
+  startedAt    DateTime?
+  endedAt      DateTime?
+  
+  // Performance metrics
+  samplesA     Int           @default(0)
+  samplesB     Int           @default(0)
+  conversionsA Int           @default(0)
+  conversionsB Int           @default(0)
+  
+  // Statistical significance
+  pValue       Float?
+  confidence   Float?
+  winner       String?       // 'A', 'B', or 'INCONCLUSIVE'
+  
+  // Timestamps
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@map("ab_tests")
+}
+
+model Webhook {
+  id             String      @id @default(cuid())
+  name           String
+  url            String
+  
+  // Organization and owner
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id])
+  
+  // Configuration
+  events         String[]    @default([]) // Which events to send
+  secret         String?     // For signature verification
+  isActive       Boolean     @default(true)
+  
+  // Error handling
+  failureCount   Int         @default(0)
+  lastFailure    DateTime?
+  lastSuccess    DateTime?
+  
+  // Timestamps
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@index([organizationId, isActive])
+  @@map("webhooks")
+}
+
+model Integration {
+  id             String      @id @default(cuid())
+  name           String
+  type           IntegrationType
+  
+  // Organization and owner
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id])
+  
+  // Configuration
+  config         Json        @default("{}")
+  credentials    Json?       @default("{}")
+  
+  // Status
+  isActive       Boolean     @default(true)
+  lastSyncAt     DateTime?
+  
+  // Timestamps
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@unique([organizationId, type])
+  @@map("integrations")
+}
+
+model EmailAnalytics {
+  id             String      @id @default(cuid())
+  
+  // Organization
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  // Time period
+  date           DateTime    @db.Date
+  hour           Int?        // 0-23 for hourly analytics
+  
+  // Metrics
+  emailsSent     Int         @default(0)
+  emailsOpened   Int         @default(0)
+  emailsClicked  Int         @default(0)
+  emailsReplied  Int         @default(0)
+  emailsBounced  Int         @default(0)
+  
+  // Calculated rates
+  openRate       Float       @default(0)
+  clickRate      Float       @default(0)
+  replyRate      Float       @default(0)
+  bounceRate     Float       @default(0)
+  
+  // Timestamps
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@unique([organizationId, date, hour])
+  @@index([organizationId, date])
+  @@map("email_analytics")
+}
+
+model ActivityLog {
+  id             String      @id @default(cuid())
+  
+  // Organization and user
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String?
+  user           User?        @relation(fields: [userId], references: [id])
+  
+  // Activity details
+  action         String      // e.g., "contact.created", "sequence.activated"
+  entityType     String      // e.g., "contact", "sequence", "template"
+  entityId       String?     // ID of the affected entity
+  
+  // Additional context
+  metadata       Json?       @default("{}")
+  ipAddress      String?
+  userAgent      String?
+  
+  // Timestamp
+  createdAt      DateTime    @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([userId, createdAt])
+  @@map("activity_logs")
+}
+
+// Enums
+enum UserRole {
+  USER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum PlanType {
+  FREE
+  STARTER
+  PROFESSIONAL
+  BUSINESS
+  ENTERPRISE
+}
+
+enum ContactStatus {
+  ACTIVE
+  UNSUBSCRIBED
+  BOUNCED
+  COMPLAINED
+}
+
+enum SequenceStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+enum TriggerType {
+  MANUAL
+  TAG_ADDED
+  LIST_ADDED
+  FORM_SUBMITTED
+  WEBHOOK
+  API_CALL
+}
+
+enum StepType {
+  EMAIL
+  DELAY
+  CONDITION
+  WEBHOOK
+  TASK
+}
+
+enum EnrollmentStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+  STOPPED
+}
+
+enum EmailStatus {
+  PENDING
+  SENT
+  DELIVERED
+  OPENED
+  CLICKED
+  REPLIED
+  BOUNCED
+  FAILED
+}
+
+enum EmailProvider {
+  SENDGRID
+  RESEND
+  MAILGUN
+  POSTMARK
+}
+
+enum EventType {
+  SENT
+  DELIVERED
+  OPENED
+  CLICKED
+  REPLIED
+  BOUNCED
+  COMPLAINED
+  UNSUBSCRIBED
+}
+
+enum TestStatus {
+  DRAFT
+  RUNNING
+  COMPLETED
+  PAUSED
+}
+
+enum IntegrationType {
+  CRM
+  ECOMMERCE
+  ANALYTICS
+  PAYMENT
+  WEBHOOK
+}
