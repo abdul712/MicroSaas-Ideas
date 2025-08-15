@@ -1,0 +1,608 @@
+// Database schema for Compliance Checklist Manager
+// Supports multi-tenant compliance management with comprehensive audit trails
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Core Organization and User Management
+model Organization {
+  id          String   @id @default(cuid())
+  name        String
+  domain      String?  @unique
+  industry    String
+  subIndustry String?
+  size        String   // Small, Medium, Large, Enterprise
+  location    String   // Jurisdiction
+  settings    Json?    // Organization-specific settings
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relationships
+  users            User[]
+  checklists       Checklist[]
+  complianceScores ComplianceScore[]
+  auditLogs        AuditLog[]
+  documents        Document[]
+  riskAssessments  RiskAssessment[]
+  audits           Audit[]
+  notifications    Notification[]
+
+  @@map("organizations")
+}
+
+model User {
+  id             String    @id @default(cuid())
+  email          String    @unique
+  name           String?
+  image          String?
+  role           UserRole  @default(USER)
+  department     String?
+  permissions    String[]  // Array of permission strings
+  lastLoginAt    DateTime?
+  isActive       Boolean   @default(true)
+  emailVerified  DateTime?
+  hashedPassword String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  // Foreign Keys
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Relationships
+  accounts           Account[]
+  sessions           Session[]
+  assignedTasks      ChecklistItem[] @relation("AssignedTo")
+  completedTasks     ChecklistItem[] @relation("CompletedBy")
+  uploadedDocuments  Document[]      @relation("UploadedBy")
+  verifiedDocuments  Document[]      @relation("VerifiedBy")
+  createdChecklists  Checklist[]     @relation("CreatedBy")
+  auditLogs          AuditLog[]
+  notifications      Notification[]
+  riskAssessments    RiskAssessment[]
+  auditAssignments   AuditAssignment[]
+
+  @@map("users")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  ORG_ADMIN
+  COMPLIANCE_MANAGER
+  AUDITOR
+  USER
+}
+
+// NextAuth.js models
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verificationtokens")
+}
+
+// Regulatory Framework and Requirements
+model Regulation {
+  id            String    @id @default(cuid())
+  name          String
+  code          String    @unique // e.g., "HIPAA", "SOX", "GDPR"
+  authority     String    // Regulatory body
+  industry      String[]  // Applicable industries
+  jurisdiction  String[]  // Geographic applicability
+  version       String
+  effectiveDate DateTime
+  description   String?   @db.Text
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relationships
+  requirements      Requirement[]
+  checklists        Checklist[]
+  templates         Template[]
+  regulationUpdates RegulationUpdate[]
+
+  @@map("regulations")
+}
+
+model Requirement {
+  id          String            @id @default(cuid())
+  title       String
+  description String            @db.Text
+  frequency   RequencyFrequency @default(ANNUAL)
+  priority    RequencyPriority  @default(MEDIUM)
+  category    String? // e.g., "Data Protection", "Physical Security"
+  tags        String[] // Searchable tags
+  evidence    String[] // Required evidence types
+  isActive    Boolean           @default(true)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  // Foreign Keys
+  regulationId String
+  regulation   Regulation @relation(fields: [regulationId], references: [id], onDelete: Cascade)
+
+  // Relationships
+  checklistItems ChecklistItem[]
+
+  @@map("requirements")
+}
+
+enum RequencyFrequency {
+  DAILY
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  SEMI_ANNUAL
+  ANNUAL
+  BIENNIAL
+  AD_HOC
+}
+
+enum RequencyPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+// Compliance Checklists and Task Management
+model Checklist {
+  id          String          @id @default(cuid())
+  title       String
+  description String?         @db.Text
+  status      ChecklistStatus @default(DRAFT)
+  dueDate     DateTime?
+  startDate   DateTime?
+  completedAt DateTime?
+  isRecurring Boolean         @default(false)
+  frequency   RequencyFrequency?
+  nextDueDate DateTime?
+  metadata    Json? // Additional checklist metadata
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  // Foreign Keys
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  regulationId   String
+  regulation     Regulation   @relation(fields: [regulationId], references: [id], onDelete: Cascade)
+  createdById    String
+  createdBy      User         @relation("CreatedBy", fields: [createdById], references: [id])
+
+  // Relationships
+  items             ChecklistItem[]
+  documents         Document[]
+  complianceScores  ComplianceScore[]
+  riskAssessments   RiskAssessment[]
+
+  @@map("checklists")
+}
+
+enum ChecklistStatus {
+  DRAFT
+  ACTIVE
+  IN_PROGRESS
+  COMPLETED
+  OVERDUE
+  ARCHIVED
+}
+
+model ChecklistItem {
+  id           String              @id @default(cuid())
+  title        String
+  description  String?             @db.Text
+  status       ChecklistItemStatus @default(PENDING)
+  priority     RequencyPriority    @default(MEDIUM)
+  dueDate      DateTime?
+  completedAt  DateTime?
+  notes        String?             @db.Text
+  evidenceUrls String[] // URLs to uploaded evidence
+  metadata     Json? // Additional item metadata
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  // Foreign Keys
+  checklistId   String
+  checklist     Checklist   @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+  requirementId String
+  requirement   Requirement @relation(fields: [requirementId], references: [id])
+  assignedToId  String?
+  assignedTo    User?       @relation("AssignedTo", fields: [assignedToId], references: [id])
+  completedById String?
+  completedBy   User?       @relation("CompletedBy", fields: [completedById], references: [id])
+
+  // Relationships
+  documents Document[]
+
+  @@map("checklist_items")
+}
+
+enum ChecklistItemStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  BLOCKED
+  OVERDUE
+  APPROVED
+  REJECTED
+}
+
+// Document and Evidence Management
+model Document {
+  id          String       @id @default(cuid())
+  title       String
+  description String?      @db.Text
+  fileName    String
+  fileUrl     String
+  fileSize    Int // Size in bytes
+  mimeType    String
+  version     String       @default("1.0")
+  tags        String[] // Searchable tags
+  status      DocumentStatus @default(PENDING)
+  isPublic    Boolean      @default(false)
+  expiresAt   DateTime? // For documents with expiration
+  metadata    Json? // Additional document metadata
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  // Foreign Keys
+  organizationId  String
+  organization    Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  checklistId     String?
+  checklist       Checklist?     @relation(fields: [checklistId], references: [id])
+  checklistItemId String?
+  checklistItem   ChecklistItem? @relation(fields: [checklistItemId], references: [id])
+  uploadedById    String
+  uploadedBy      User           @relation("UploadedBy", fields: [uploadedById], references: [id])
+  verifiedById    String?
+  verifiedBy      User?          @relation("VerifiedBy", fields: [verifiedById], references: [id])
+
+  @@map("documents")
+}
+
+enum DocumentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  ARCHIVED
+}
+
+// Risk Assessment and Management
+model RiskAssessment {
+  id             String     @id @default(cuid())
+  title          String
+  description    String?    @db.Text
+  riskLevel      RiskLevel
+  probability    Int // 1-5 scale
+  impact         Int // 1-5 scale
+  riskScore      Float // Calculated risk score
+  mitigation     String?    @db.Text
+  status         RiskStatus @default(IDENTIFIED)
+  reviewDate     DateTime?
+  mitigationDate DateTime?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  // Foreign Keys
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  checklistId    String?
+  checklist      Checklist?   @relation(fields: [checklistId], references: [id])
+  assessedById   String
+  assessedBy     User         @relation(fields: [assessedById], references: [id])
+
+  @@map("risk_assessments")
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum RiskStatus {
+  IDENTIFIED
+  ASSESSING
+  MITIGATING
+  MONITORING
+  RESOLVED
+}
+
+// Audit Management
+model Audit {
+  id          String      @id @default(cuid())
+  title       String
+  description String?     @db.Text
+  type        AuditType
+  status      AuditStatus @default(PLANNED)
+  startDate   DateTime
+  endDate     DateTime?
+  findings    String?     @db.Text
+  recommendations String? @db.Text
+  score       Float? // Overall audit score
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  // Foreign Keys
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Relationships
+  assignments AuditAssignment[]
+  findings    AuditFinding[]
+
+  @@map("audits")
+}
+
+enum AuditType {
+  INTERNAL
+  EXTERNAL
+  REGULATORY
+  CERTIFICATION
+}
+
+enum AuditStatus {
+  PLANNED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  FOLLOW_UP
+}
+
+model AuditAssignment {
+  id     String @id @default(cuid())
+  role   String // e.g., "Lead Auditor", "Subject Matter Expert"
+  notes  String? @db.Text
+
+  // Foreign Keys
+  auditId String
+  audit   Audit  @relation(fields: [auditId], references: [id], onDelete: Cascade)
+  userId  String
+  user    User   @relation(fields: [userId], references: [id])
+
+  @@unique([auditId, userId])
+  @@map("audit_assignments")
+}
+
+model AuditFinding {
+  id          String              @id @default(cuid())
+  title       String
+  description String              @db.Text
+  severity    FindingSeverity
+  status      FindingStatus       @default(OPEN)
+  dueDate     DateTime?
+  resolvedAt  DateTime?
+  resolution  String?             @db.Text
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  // Foreign Keys
+  auditId String
+  audit   Audit  @relation(fields: [auditId], references: [id], onDelete: Cascade)
+
+  @@map("audit_findings")
+}
+
+enum FindingSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum FindingStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  ACCEPTED_RISK
+}
+
+// Compliance Scoring and Analytics
+model ComplianceScore {
+  id               String   @id @default(cuid())
+  overallScore     Float // 0-100
+  regulatoryScore  Float // 0-100
+  processScore     Float // 0-100
+  documentScore    Float // 0-100
+  riskScore        Float // 0-100
+  calculationDate  DateTime
+  scoreBreakdown   Json // Detailed score breakdown
+  recommendations  String[] // AI-generated recommendations
+  createdAt        DateTime @default(now())
+
+  // Foreign Keys
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  checklistId    String?
+  checklist      Checklist?   @relation(fields: [checklistId], references: [id])
+
+  @@map("compliance_scores")
+}
+
+// Templates and Framework Management
+model Template {
+  id          String   @id @default(cuid())
+  name        String
+  description String?  @db.Text
+  industry    String[]
+  category    String
+  structure   Json // Template structure definition
+  isPublic    Boolean  @default(false)
+  version     String   @default("1.0")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Foreign Keys
+  regulationId String
+  regulation   Regulation @relation(fields: [regulationId], references: [id])
+
+  @@map("templates")
+}
+
+// Regulation Updates and Change Management
+model RegulationUpdate {
+  id          String           @id @default(cuid())
+  title       String
+  description String           @db.Text
+  changeType  ChangeType
+  effectiveDate DateTime
+  impact      ImpactLevel
+  summary     String?          @db.Text
+  alertSent   Boolean          @default(false)
+  createdAt   DateTime         @default(now())
+
+  // Foreign Keys
+  regulationId String
+  regulation   Regulation @relation(fields: [regulationId], references: [id], onDelete: Cascade)
+
+  @@map("regulation_updates")
+}
+
+enum ChangeType {
+  NEW_REQUIREMENT
+  MODIFIED_REQUIREMENT
+  REMOVED_REQUIREMENT
+  CLARIFICATION
+  DEADLINE_CHANGE
+}
+
+enum ImpactLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+// Notifications and Communication
+model Notification {
+  id        String             @id @default(cuid())
+  title     String
+  content   String             @db.Text
+  type      NotificationType
+  priority  NotificationPriority @default(MEDIUM)
+  channels  String[] // email, sms, in-app
+  sentAt    DateTime?
+  readAt    DateTime?
+  actionUrl String? // Link for action items
+  metadata  Json? // Additional notification data
+  createdAt DateTime           @default(now())
+
+  // Foreign Keys
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id])
+
+  @@map("notifications")
+}
+
+enum NotificationType {
+  TASK_DUE
+  TASK_OVERDUE
+  COMPLIANCE_ALERT
+  AUDIT_REMINDER
+  REGULATION_UPDATE
+  DOCUMENT_EXPIRING
+  RISK_IDENTIFIED
+  SYSTEM_NOTIFICATION
+}
+
+enum NotificationPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+// Audit Trail and Activity Logging
+model AuditLog {
+  id        String   @id @default(cuid())
+  action    String // Action performed
+  entity    String // Entity type (e.g., "checklist", "document")
+  entityId  String // ID of the affected entity
+  changes   Json? // Before/after changes
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  // Foreign Keys
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id])
+
+  @@map("audit_logs")
+}
+
+// Indexes for performance optimization
+// Organization lookups
+@@index([organizationId], map: "idx_organization_id")
+
+// User lookups
+@@index([email], map: "idx_user_email")
+@@index([organizationId, role], map: "idx_user_org_role")
+
+// Checklist queries
+@@index([organizationId, status], map: "idx_checklist_org_status")
+@@index([regulationId], map: "idx_checklist_regulation")
+@@index([dueDate], map: "idx_checklist_due_date")
+
+// Checklist item queries
+@@index([checklistId, status], map: "idx_item_checklist_status")
+@@index([assignedToId], map: "idx_item_assigned_to")
+@@index([dueDate], map: "idx_item_due_date")
+
+// Document queries
+@@index([organizationId, status], map: "idx_document_org_status")
+@@index([checklistId], map: "idx_document_checklist")
+
+// Audit trail queries
+@@index([organizationId, createdAt], map: "idx_audit_log_org_created")
+@@index([userId, createdAt], map: "idx_audit_log_user_created")
+
+// Compliance score queries
+@@index([organizationId, calculationDate], map: "idx_compliance_score_org_date")
+
+// Notification queries
+@@index([userId, readAt], map: "idx_notification_user_read")
+@@index([organizationId, type], map: "idx_notification_org_type")
