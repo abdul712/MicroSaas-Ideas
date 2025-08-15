@@ -1,0 +1,108 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: timescale/timescaledb:latest-pg14
+    environment:
+      POSTGRES_USER: blog_optimizer
+      POSTGRES_PASSWORD: secure_password_change_me
+      POSTGRES_DB: blog_optimizer
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - blog_optimizer_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U blog_optimizer"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis Cache & Queue
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - blog_optimizer_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Main Application
+  app:
+    build: .
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://blog_optimizer:secure_password_change_me@postgres:5432/blog_optimizer
+      REDIS_URL: redis://redis:6379
+      NEXTAUTH_SECRET: your_nextauth_secret_change_me
+      NEXTAUTH_URL: http://localhost:3000
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - blog_optimizer_network
+    volumes:
+      - /dev/shm:/dev/shm # Shared memory for Puppeteer
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # Queue Worker (separate instance for background jobs)
+  worker:
+    build: .
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://blog_optimizer:secure_password_change_me@postgres:5432/blog_optimizer
+      REDIS_URL: redis://redis:6379
+      WORKER_MODE: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - blog_optimizer_network
+    volumes:
+      - /dev/shm:/dev/shm # Shared memory for Puppeteer
+    restart: unless-stopped
+    command: ["node", "worker.js"]
+
+  # Nginx Reverse Proxy (optional, for production)
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - app
+    networks:
+      - blog_optimizer_network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  blog_optimizer_network:
+    driver: bridge

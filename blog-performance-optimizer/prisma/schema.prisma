@@ -1,0 +1,345 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  image         String?
+  emailVerified DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  accounts    Account[]
+  sessions    Session[]
+  websites    Website[]
+  projects    Project[]
+  
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verificationtokens")
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  userId      String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  websites Website[]
+
+  @@map("projects")
+}
+
+model Website {
+  id                String                @id @default(cuid())
+  url               String
+  name              String
+  description       String?
+  projectId         String
+  userId            String
+  isActive          Boolean               @default(true)
+  lastScanAt        DateTime?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  // Relations
+  project           Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user              User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  performanceScans  PerformanceScan[]
+  seoAudits         SeoAudit[]
+  accessibilityScans AccessibilityScan[]
+  monitoringAlerts  MonitoringAlert[]
+  optimizations     Optimization[]
+
+  @@map("websites")
+}
+
+model PerformanceScan {
+  id                    String   @id @default(cuid())
+  websiteId             String
+  url                   String
+  device                String   // "mobile" | "desktop"
+  
+  // Core Web Vitals
+  lcp                   Float?   // Largest Contentful Paint
+  fid                   Float?   // First Input Delay
+  cls                   Float?   // Cumulative Layout Shift
+  fcp                   Float?   // First Contentful Paint
+  ttfb                  Float?   // Time to First Byte
+  
+  // Performance metrics
+  performanceScore      Int?
+  accessibilityScore    Int?
+  bestPracticesScore    Int?
+  seoScore              Int?
+  
+  // Detailed metrics
+  speedIndex            Float?
+  totalBlockingTime     Float?
+  largestContentfulPaint Float?
+  cumulativeLayoutShift Float?
+  
+  // Resource metrics
+  totalBytes            Int?
+  imageBytes            Int?
+  jsBytes               Int?
+  cssBytes              Int?
+  htmlBytes             Int?
+  
+  scanDuration          Int?     // in milliseconds
+  scanStatus            String   @default("pending") // "pending" | "running" | "completed" | "failed"
+  errorMessage          String?
+  rawData               Json?    // Store full Lighthouse report
+  
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  website Website @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+
+  @@map("performance_scans")
+}
+
+model SeoAudit {
+  id            String   @id @default(cuid())
+  websiteId     String
+  url           String
+  
+  // Meta tags
+  title         String?
+  description   String?
+  keywords      String?
+  
+  // Open Graph
+  ogTitle       String?
+  ogDescription String?
+  ogImage       String?
+  
+  // Technical SEO
+  hasH1         Boolean  @default(false)
+  h1Count       Int      @default(0)
+  h1Text        String?
+  hasMetaDesc   Boolean  @default(false)
+  metaDescLength Int     @default(0)
+  hasSitemap    Boolean  @default(false)
+  hasRobotsTxt  Boolean  @default(false)
+  
+  // Schema markup
+  hasStructuredData Boolean @default(false)
+  structuredDataTypes String? // JSON array of schema types found
+  
+  // Images
+  totalImages   Int      @default(0)
+  imagesWithAlt Int      @default(0)
+  imagesWithoutAlt Int   @default(0)
+  
+  // Links
+  internalLinks Int      @default(0)
+  externalLinks Int      @default(0)
+  brokenLinks   Int      @default(0)
+  
+  // Performance impact on SEO
+  mobileOptimized Boolean @default(false)
+  pageLoadSpeed Float?
+  
+  auditScore    Int?     // Overall SEO score (0-100)
+  suggestions   Json?    // Array of improvement suggestions
+  issues        Json?    // Array of issues found
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  website Website @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+
+  @@map("seo_audits")
+}
+
+model AccessibilityScan {
+  id                    String   @id @default(cuid())
+  websiteId             String
+  url                   String
+  
+  // WCAG compliance
+  wcagLevel             String   @default("AA") // "A" | "AA" | "AAA"
+  complianceScore       Int?     // 0-100
+  
+  // Accessibility metrics
+  colorContrastIssues   Int      @default(0)
+  missingAltText        Int      @default(0)
+  keyboardNavIssues     Int      @default(0)
+  focusIndicatorIssues  Int      @default(0)
+  headingStructureIssues Int     @default(0)
+  
+  // ARIA
+  missingAriaLabels     Int      @default(0)
+  invalidAriaAttributes Int      @default(0)
+  
+  // Form accessibility
+  formIssues            Int      @default(0)
+  missingFormLabels     Int      @default(0)
+  
+  totalIssues           Int      @default(0)
+  criticalIssues        Int      @default(0)
+  warningIssues         Int      @default(0)
+  
+  issues                Json?    // Detailed issues array
+  recommendations       Json?    // Accessibility improvement recommendations
+  
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  website Website @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+
+  @@map("accessibility_scans")
+}
+
+model MonitoringAlert {
+  id          String   @id @default(cuid())
+  websiteId   String
+  type        String   // "downtime" | "performance" | "error" | "security"
+  severity    String   // "low" | "medium" | "high" | "critical"
+  title       String
+  message     String
+  
+  // Alert triggers
+  triggerValue Float?
+  thresholdValue Float?
+  
+  // Status
+  status      String   @default("active") // "active" | "acknowledged" | "resolved"
+  acknowledgedAt DateTime?
+  resolvedAt  DateTime?
+  
+  // Metadata
+  metadata    Json?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  website Website @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+
+  @@map("monitoring_alerts")
+}
+
+model Optimization {
+  id            String   @id @default(cuid())
+  websiteId     String
+  type          String   // "image" | "css" | "js" | "caching" | "cdn" | "database"
+  title         String
+  description   String
+  
+  // Implementation details
+  status        String   @default("pending") // "pending" | "in_progress" | "completed" | "failed"
+  priority      String   @default("medium") // "low" | "medium" | "high"
+  
+  // Impact metrics
+  estimatedImprovement Float? // Expected performance improvement percentage
+  actualImprovement   Float?  // Measured improvement after implementation
+  
+  // Implementation
+  implementationSteps Json?   // Array of steps to implement
+  automationAvailable Boolean @default(false)
+  autoImplemented     Boolean @default(false)
+  
+  // Results
+  beforeMetrics Json?
+  afterMetrics  Json?
+  
+  implementedAt DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  website Website @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+
+  @@map("optimizations")
+}
+
+// Time-series data for performance tracking
+model PerformanceMetric {
+  id        String   @id @default(cuid())
+  websiteId String
+  timestamp DateTime @default(now())
+  
+  // Metric type and value
+  metricType String  // "lcp" | "fid" | "cls" | "ttfb" | "speed_index" | etc.
+  value     Float
+  device    String  // "mobile" | "desktop"
+  
+  // Additional context
+  url       String?
+  userAgent String?
+  location  String?
+  
+  @@map("performance_metrics")
+  @@index([websiteId, timestamp])
+  @@index([websiteId, metricType, timestamp])
+}
+
+model UptimeCheck {
+  id           String   @id @default(cuid())
+  websiteId    String
+  timestamp    DateTime @default(now())
+  
+  // Check results
+  isUp         Boolean
+  responseTime Int?     // in milliseconds
+  statusCode   Int?
+  errorMessage String?
+  
+  // Check details
+  checkType    String   @default("http") // "http" | "https" | "ping"
+  location     String?  // Check location/region
+  
+  @@map("uptime_checks")
+  @@index([websiteId, timestamp])
+}
