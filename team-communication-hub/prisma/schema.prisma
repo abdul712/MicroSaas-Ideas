@@ -1,0 +1,342 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  username      String    @unique
+  firstName     String?
+  lastName      String?
+  avatarUrl     String?
+  status        UserStatus @default(OFFLINE)
+  lastSeenAt    DateTime?
+  timezone      String?
+  locale        String    @default("en")
+  emailVerified DateTime?
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Authentication
+  accounts      Account[]
+  sessions      Session[]
+
+  // Team relationships
+  teamMemberships TeamMember[]
+  ownedTeams      Team[]       @relation("TeamOwner")
+
+  // Message relationships
+  sentMessages    Message[]
+  readReceipts    ReadReceipt[]
+  reactions       Reaction[]
+
+  // Channel relationships
+  channelMembers  ChannelMember[]
+  createdChannels Channel[]       @relation("ChannelCreator")
+
+  // File relationships
+  uploadedFiles   File[]
+
+  // Activity tracking
+  activities      Activity[]
+  presenceHistory PresenceHistory[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model Team {
+  id          String     @id @default(cuid())
+  name        String
+  slug        String     @unique
+  description String?
+  avatarUrl   String?
+  domain      String?    @unique
+  settings    Json       @default("{}")
+  planType    PlanType   @default(FREE)
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  // Relationships
+  ownerId     String
+  owner       User           @relation("TeamOwner", fields: [ownerId], references: [id])
+  members     TeamMember[]
+  channels    Channel[]
+  invitations TeamInvitation[]
+  files       File[]
+  activities  Activity[]
+
+  @@map("teams")
+}
+
+model TeamMember {
+  id        String     @id @default(cuid())
+  role      TeamRole   @default(MEMBER)
+  joinedAt  DateTime   @default(now())
+  isActive  Boolean    @default(true)
+
+  teamId    String
+  userId    String
+  team      Team       @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@map("team_members")
+}
+
+model TeamInvitation {
+  id          String            @id @default(cuid())
+  email       String
+  role        TeamRole          @default(MEMBER)
+  token       String            @unique
+  status      InvitationStatus  @default(PENDING)
+  expiresAt   DateTime
+  createdAt   DateTime          @default(now())
+
+  teamId      String
+  invitedById String
+  team        Team              @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, email])
+  @@map("team_invitations")
+}
+
+model Channel {
+  id          String      @id @default(cuid())
+  name        String
+  slug        String
+  description String?
+  type        ChannelType @default(PUBLIC)
+  isArchived  Boolean     @default(false)
+  settings    Json        @default("{}")
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  teamId      String
+  createdById String
+  team        Team            @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  createdBy   User            @relation("ChannelCreator", fields: [createdById], references: [id])
+
+  members     ChannelMember[]
+  messages    Message[]
+
+  @@unique([teamId, slug])
+  @@map("channels")
+}
+
+model ChannelMember {
+  id        String   @id @default(cuid())
+  joinedAt  DateTime @default(now())
+  role      ChannelRole @default(MEMBER)
+  isActive  Boolean  @default(true)
+
+  channelId String
+  userId    String
+  channel   Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, userId])
+  @@map("channel_members")
+}
+
+model Message {
+  id          String      @id @default(cuid())
+  content     String
+  type        MessageType @default(TEXT)
+  metadata    Json?
+  isEdited    Boolean     @default(false)
+  editedAt    DateTime?
+  isDeleted   Boolean     @default(false)
+  deletedAt   DateTime?
+  threadId    String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  channelId   String
+  authorId    String
+  channel     Channel       @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  author      User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  // Thread relationships
+  parentMessage Message?    @relation("MessageThread", fields: [threadId], references: [id])
+  replies       Message[]   @relation("MessageThread")
+
+  // Engagement
+  reactions     Reaction[]
+  readReceipts  ReadReceipt[]
+  attachments   File[]
+
+  @@map("messages")
+}
+
+model ReadReceipt {
+  id        String   @id @default(cuid())
+  readAt    DateTime @default(now())
+
+  messageId String
+  userId    String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId])
+  @@map("read_receipts")
+}
+
+model Reaction {
+  id        String   @id @default(cuid())
+  emoji     String
+  createdAt DateTime @default(now())
+
+  messageId String
+  userId    String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId, emoji])
+  @@map("reactions")
+}
+
+model File {
+  id          String   @id @default(cuid())
+  filename    String
+  originalName String
+  mimeType    String
+  size        Int
+  url         String
+  thumbnailUrl String?
+  metadata    Json?
+  isDeleted   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  teamId    String?
+  uploaderId String
+  messageId String?
+  team      Team?   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  uploader  User    @relation(fields: [uploaderId], references: [id], onDelete: Cascade)
+  message   Message? @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@map("files")
+}
+
+model Activity {
+  id        String       @id @default(cuid())
+  type      ActivityType
+  data      Json
+  createdAt DateTime     @default(now())
+
+  teamId String?
+  userId String
+  team   Team?  @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("activities")
+}
+
+model PresenceHistory {
+  id        String     @id @default(cuid())
+  status    UserStatus
+  timestamp DateTime   @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("presence_history")
+}
+
+// Enums
+enum UserStatus {
+  ONLINE
+  AWAY
+  BUSY
+  OFFLINE
+}
+
+enum TeamRole {
+  OWNER
+  ADMIN
+  MEMBER
+  GUEST
+}
+
+enum ChannelRole {
+  ADMIN
+  MEMBER
+}
+
+enum ChannelType {
+  PUBLIC
+  PRIVATE
+  DIRECT
+  GROUP
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  FILE
+  SYSTEM
+  THREAD_REPLY
+}
+
+enum PlanType {
+  FREE
+  STARTER
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+enum ActivityType {
+  USER_JOINED
+  USER_LEFT
+  CHANNEL_CREATED
+  CHANNEL_ARCHIVED
+  MESSAGE_POSTED
+  FILE_UPLOADED
+  TEAM_SETTINGS_UPDATED
+}
