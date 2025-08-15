@@ -1,0 +1,474 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["multiSchema"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  schemas  = ["public", "timescale"]
+}
+
+// ===========================================
+// TENANT & ORGANIZATION MANAGEMENT
+// ===========================================
+
+model Tenant {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  plan        String   @default("starter") // starter, growth, scale, enterprise
+  status      String   @default("active") // active, suspended, cancelled
+  settings    Json     @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relationships
+  organizations Organization[]
+  
+  @@map("tenants")
+  @@schema("public")
+}
+
+model Organization {
+  id          String   @id @default(cuid())
+  tenantId    String
+  name        String
+  industry    String?
+  timezone    String   @default("UTC")
+  currency    String   @default("USD")
+  website     String?
+  settings    Json     @default("{}")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relationships
+  tenant      Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  users       User[]
+  dashboards  Dashboard[]
+  integrations Integration[]
+  alerts      Alert[]
+  reports     Report[]
+  auditLogs   AuditLog[]
+  
+  @@map("organizations")
+  @@schema("public")
+}
+
+// ===========================================
+// USER MANAGEMENT & AUTHENTICATION
+// ===========================================
+
+model User {
+  id              String    @id @default(cuid())
+  organizationId  String
+  email           String    @unique
+  passwordHash    String
+  firstName       String
+  lastName        String
+  role            String    @default("viewer") // admin, manager, analyst, viewer
+  permissions     String[]  @default([])
+  isActive        Boolean   @default(true)
+  emailVerified   Boolean   @default(false)
+  lastLoginAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  // Relationships
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  dashboards      Dashboard[]
+  reports         Report[]
+  auditLogs       AuditLog[]
+  
+  @@map("users")
+  @@schema("public")
+}
+
+model Session {
+  id          String   @id @default(cuid())
+  userId      String
+  token       String   @unique
+  type        String   // access, refresh
+  expiresAt   DateTime
+  isRevoked   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  
+  @@map("sessions")
+  @@schema("public")
+}
+
+// ===========================================
+// SALES METRICS & ANALYTICS (TimescaleDB)
+// ===========================================
+
+model SalesMetric {
+  id                  String   @id @default(cuid())
+  organizationId      String
+  timestamp           DateTime
+  period              String   // hour, day, week, month, quarter, year
+  
+  // Revenue metrics
+  totalRevenue        Decimal  @default(0) @db.Money
+  recurringRevenue    Decimal  @default(0) @db.Money
+  oneTimeRevenue      Decimal  @default(0) @db.Money
+  
+  // Sales metrics
+  totalOrders         Int      @default(0)
+  newCustomers        Int      @default(0)
+  returningCustomers  Int      @default(0)
+  avgOrderValue       Decimal  @default(0) @db.Money
+  conversionRate      Decimal  @default(0) @db.Decimal(5,4)
+  
+  // Channel metrics
+  channel             String?  // online, offline, phone, email, social, etc.
+  source              String?  // organic, paid, referral, direct, etc.
+  campaign            String?
+  
+  // Geographic and demographic
+  region              String?
+  country             String?
+  customerSegment     String?
+  
+  // Product metrics
+  productCategory     String?
+  productCount        Int      @default(0)
+  unitsSold           Int      @default(0)
+  
+  // Time-based calculations
+  periodStart         DateTime
+  periodEnd           DateTime
+  
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  
+  @@map("sales_metrics")
+  @@schema("timescale")
+  @@index([organizationId, timestamp])
+  @@index([organizationId, period, timestamp])
+  @@index([organizationId, channel, timestamp])
+}
+
+model CustomerMetric {
+  id                    String   @id @default(cuid())
+  organizationId        String
+  customerId            String?  // External customer ID from CRM/e-commerce
+  timestamp             DateTime
+  
+  // Customer lifecycle
+  acquisitionDate       DateTime?
+  firstPurchaseDate     DateTime?
+  lastPurchaseDate      DateTime?
+  totalOrders           Int      @default(0)
+  totalRevenue          Decimal  @default(0) @db.Money
+  avgOrderValue         Decimal  @default(0) @db.Money
+  
+  // Behavioral metrics
+  websiteVisits         Int      @default(0)
+  emailOpens            Int      @default(0)
+  emailClicks           Int      @default(0)
+  supportTickets        Int      @default(0)
+  
+  // Calculated metrics
+  lifetimeValue         Decimal  @default(0) @db.Money
+  churnProbability      Decimal  @default(0) @db.Decimal(3,2)
+  engagementScore       Decimal  @default(0) @db.Decimal(3,2)
+  
+  // Segmentation
+  segment               String?
+  riskLevel             String?  // low, medium, high
+  
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  
+  @@map("customer_metrics")
+  @@schema("timescale")
+  @@index([organizationId, customerId])
+  @@index([organizationId, timestamp])
+}
+
+model ProductMetric {
+  id                String   @id @default(cuid())
+  organizationId    String
+  productId         String?  // External product ID
+  sku               String?
+  timestamp         DateTime
+  
+  // Product performance
+  name              String?
+  category          String?
+  revenue           Decimal  @default(0) @db.Money
+  unitsSold         Int      @default(0)
+  views             Int      @default(0)
+  addToCarts        Int      @default(0)
+  
+  // Calculated metrics
+  conversionRate    Decimal  @default(0) @db.Decimal(5,4)
+  returnRate        Decimal  @default(0) @db.Decimal(5,4)
+  marginPercent     Decimal  @default(0) @db.Decimal(5,2)
+  
+  // Inventory
+  stockLevel        Int?
+  stockValue        Decimal? @db.Money
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  @@map("product_metrics")
+  @@schema("timescale")
+  @@index([organizationId, productId])
+  @@index([organizationId, sku])
+  @@index([organizationId, timestamp])
+}
+
+// ===========================================
+// DASHBOARDS & VISUALIZATION
+// ===========================================
+
+model Dashboard {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String?  // Creator user, null for system dashboards
+  name           String
+  description    String?
+  layoutConfig   Json     @default("{}")
+  widgets        Json     @default("[]")
+  filters        Json     @default("{}")
+  isDefault      Boolean  @default(false)
+  isPublic       Boolean  @default(false)
+  sharedWith     String[] @default([]) // User IDs
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  // Relationships
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  
+  @@map("dashboards")
+  @@schema("public")
+}
+
+model Widget {
+  id           String   @id @default(cuid())
+  dashboardId  String?  // Null for widget templates
+  type         String   // chart, table, metric, gauge, etc.
+  title        String
+  config       Json     @default("{}")
+  position     Json     @default("{}")
+  size         Json     @default("{}")
+  dataSource   Json     @default("{}")
+  isTemplate   Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  @@map("widgets")
+  @@schema("public")
+}
+
+// ===========================================
+// INTEGRATIONS & DATA SOURCES
+// ===========================================
+
+model Integration {
+  id               String   @id @default(cuid())
+  organizationId   String
+  type             String   // salesforce, hubspot, shopify, stripe, etc.
+  name             String
+  config           Json     @default("{}")   // Encrypted connection details
+  status           String   @default("active") // active, inactive, error
+  lastSync         DateTime?
+  syncFrequency    Int      @default(3600)   // Seconds
+  errorLog         Json?
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  
+  // Relationships
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  syncLogs         SyncLog[]
+  
+  @@map("integrations")
+  @@schema("public")
+}
+
+model SyncLog {
+  id             String    @id @default(cuid())
+  integrationId  String
+  status         String    // success, error, partial
+  recordsProcessed Int     @default(0)
+  recordsCreated   Int     @default(0)
+  recordsUpdated   Int     @default(0)
+  recordsSkipped   Int     @default(0)
+  errorDetails   Json?
+  startedAt      DateTime
+  completedAt    DateTime?
+  duration       Int?      // Milliseconds
+  
+  // Relationships
+  integration    Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  
+  @@map("sync_logs")
+  @@schema("public")
+}
+
+// ===========================================
+// ALERTS & NOTIFICATIONS
+// ===========================================
+
+model Alert {
+  id               String   @id @default(cuid())
+  organizationId   String
+  name             String
+  description      String?
+  metric           String   // The metric to monitor
+  condition        String   // greater_than, less_than, equals, etc.
+  threshold        Decimal  @db.Decimal(15,4)
+  frequency        Int      @default(3600) // Check frequency in seconds
+  recipients       String[] // Email addresses or user IDs
+  channels         String[] @default(["email"]) // email, slack, webhook
+  isActive         Boolean  @default(true)
+  lastTriggered    DateTime?
+  triggerCount     Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  
+  // Relationships
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  notifications    Notification[]
+  
+  @@map("alerts")
+  @@schema("public")
+}
+
+model Notification {
+  id          String   @id @default(cuid())
+  alertId     String
+  channel     String   // email, slack, webhook, push
+  recipient   String
+  subject     String?
+  message     String
+  status      String   @default("pending") // pending, sent, failed
+  sentAt      DateTime?
+  errorReason String?
+  createdAt   DateTime @default(now())
+  
+  // Relationships
+  alert       Alert    @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  
+  @@map("notifications")
+  @@schema("public")
+}
+
+// ===========================================
+// REPORTS & EXPORTS
+// ===========================================
+
+model Report {
+  id               String   @id @default(cuid())
+  organizationId   String
+  userId           String
+  name             String
+  type             String   // standard, custom, scheduled
+  format           String   @default("pdf") // pdf, excel, csv
+  schedule         Json?    // Cron expression and settings
+  filters          Json     @default("{}")
+  config           Json     @default("{}")
+  recipients       String[] @default([])
+  lastGenerated    DateTime?
+  nextScheduled    DateTime?
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  
+  // Relationships
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user             User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exports          ReportExport[]
+  
+  @@map("reports")
+  @@schema("public")
+}
+
+model ReportExport {
+  id         String   @id @default(cuid())
+  reportId   String
+  fileName   String
+  fileSize   Int?
+  fileUrl    String?
+  status     String   @default("generating") // generating, completed, failed
+  error      String?
+  generatedAt DateTime @default(now())
+  expiresAt   DateTime?
+  downloadCount Int    @default(0)
+  
+  // Relationships
+  report     Report   @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  
+  @@map("report_exports")
+  @@schema("public")
+}
+
+// ===========================================
+// AUDIT LOGGING & COMPLIANCE
+// ===========================================
+
+model AuditLog {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String?
+  action         String   // create, update, delete, view, export
+  entityType     String   // user, dashboard, report, etc.
+  entityId       String?
+  oldValues      Json?
+  newValues      Json?
+  ipAddress      String?
+  userAgent      String?
+  sessionId      String?
+  timestamp      DateTime @default(now())
+  
+  // Relationships
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  
+  @@map("audit_logs")
+  @@schema("public")
+  @@index([organizationId, timestamp])
+  @@index([organizationId, userId, timestamp])
+  @@index([organizationId, action, timestamp])
+}
+
+// ===========================================
+// SYSTEM CONFIGURATION
+// ===========================================
+
+model SystemSetting {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       Json
+  description String?
+  isEncrypted Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@map("system_settings")
+  @@schema("public")
+}
+
+model FeatureFlag {
+  id             String   @id @default(cuid())
+  name           String   @unique
+  description    String?
+  isEnabled      Boolean  @default(false)
+  rolloutPercent Int      @default(0)
+  targetRoles    String[] @default([])
+  targetTenants  String[] @default([])
+  config         Json     @default("{}")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  @@map("feature_flags")
+  @@schema("public")
+}

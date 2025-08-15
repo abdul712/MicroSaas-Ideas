@@ -1,0 +1,50 @@
+{
+  "name": "sales-performance-dashboard",
+  "version": "1.0.0",
+  "description": "Enterprise-grade Sales Performance Dashboard MicroSaaS with real-time analytics and AI forecasting",
+  "private": true,
+  "scripts": {
+    "dev": "docker-compose up -d && concurrently \"npm run dev:frontend\" \"npm run dev:backend\"",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "cd backend && npm run dev",
+    "build": "npm run build:frontend && npm run build:backend",
+    "build:frontend": "cd frontend && npm run build",
+    "build:backend": "cd backend && npm run build",
+    "test": "npm run test:frontend && npm run test:backend",
+    "test:frontend": "cd frontend && npm test",
+    "test:backend": "cd backend && npm test",
+    "lint": "npm run lint:frontend && npm run lint:backend",
+    "lint:frontend": "cd frontend && npm run lint",
+    "lint:backend": "cd backend && npm run lint",
+    "setup": "npm run setup:deps && npm run setup:db",
+    "setup:deps": "cd frontend && npm install && cd ../backend && npm install",
+    "setup:db": "docker-compose up -d postgres redis timescaledb && sleep 10 && npm run db:migrate",
+    "db:migrate": "cd backend && npm run db:migrate",
+    "db:seed": "cd backend && npm run db:seed",
+    "start": "docker-compose up",
+    "start:prod": "docker-compose -f docker-compose.prod.yml up"
+  },
+  "keywords": [
+    "sales-analytics",
+    "dashboard",
+    "microSaaS",
+    "real-time",
+    "AI-forecasting",
+    "CRM-integration",
+    "business-intelligence"
+  ],
+  "author": "Sales Performance Dashboard Team",
+  "license": "MIT",
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "@types/node": "^20.10.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}
