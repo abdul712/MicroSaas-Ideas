@@ -1,0 +1,442 @@
+// Prisma schema for Competitor Analysis Platform
+// Database: PostgreSQL with multi-tenant architecture
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ========================================
+// CORE ENTITIES
+// ========================================
+
+model Organization {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  website     String?
+  industry    String?
+  size        String?  // startup, small, medium, large, enterprise
+  
+  // Subscription
+  plan        String   @default("starter") // starter, professional, business, enterprise
+  status      String   @default("active")  // active, suspended, cancelled
+  trialEndsAt DateTime?
+  
+  // Metadata
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  users       User[]
+  competitors Competitor[]
+  alerts      Alert[]
+  reports     Report[]
+  apiKeys     ApiKey[]
+  auditLogs   AuditLog[]
+  
+  @@map("organizations")
+}
+
+model User {
+  id             String   @id @default(cuid())
+  email          String   @unique
+  name           String?
+  avatar         String?
+  role           String   @default("member") // owner, admin, member, viewer
+  
+  // Authentication
+  emailVerified  DateTime?
+  hashedPassword String?
+  
+  // Preferences
+  timezone       String   @default("UTC")
+  notifications  Json     @default("{\"email\": true, \"push\": true}")
+  
+  // Metadata
+  lastActiveAt   DateTime @default(now())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  // Relations
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sessions       Session[]
+  auditLogs      AuditLog[]
+  
+  @@map("users")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("sessions")
+}
+
+// ========================================
+// COMPETITOR MONITORING
+// ========================================
+
+model Competitor {
+  id          String   @id @default(cuid())
+  name        String
+  website     String
+  description String?
+  logo        String?
+  
+  // Categorization
+  industry    String?
+  size        String?
+  tags        String[] @default([])
+  
+  // Monitoring Settings
+  isActive    Boolean  @default(true)
+  priority    String   @default("medium") // low, medium, high, critical
+  
+  // Metadata
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  organizationId     String
+  organization       Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  monitoringRules    MonitoringRule[]
+  scrapedData        ScrapedData[]
+  priceHistory       PriceHistory[]
+  socialMetrics      SocialMetric[]
+  alerts             Alert[]
+  competitorReports  CompetitorReport[]
+  
+  @@map("competitors")
+}
+
+model MonitoringRule {
+  id          String   @id @default(cuid())
+  name        String
+  ruleType    String   // pricing, products, content, social, seo, ads
+  
+  // Target Configuration
+  targetUrl   String
+  selectors   Json     // CSS selectors, XPath, etc.
+  
+  // Monitoring Settings
+  frequency   String   @default("daily") // hourly, daily, weekly
+  isActive    Boolean  @default(true)
+  
+  // Advanced Settings
+  alertThresholds Json  @default("{}")
+  customSettings  Json  @default("{}")
+  
+  // Metadata
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  lastRunAt   DateTime?
+  
+  // Relations
+  competitorId String
+  competitor   Competitor    @relation(fields: [competitorId], references: [id], onDelete: Cascade)
+  scrapedData  ScrapedData[]
+  
+  @@map("monitoring_rules")
+}
+
+// ========================================
+// DATA COLLECTION & ANALYSIS
+// ========================================
+
+model ScrapedData {
+  id           String   @id @default(cuid())
+  dataType     String   // pricing, product, content, social, seo
+  
+  // Data Storage
+  rawData      Json
+  processedData Json?
+  screenshot   String?
+  
+  // Metadata
+  scrapedAt    DateTime
+  createdAt    DateTime @default(now())
+  
+  // Change Detection
+  hasChanged   Boolean  @default(false)
+  changeType   String?  // added, removed, modified, price_change
+  previousData Json?
+  
+  // Relations
+  competitorId String
+  competitor   Competitor      @relation(fields: [competitorId], references: [id], onDelete: Cascade)
+  ruleId       String?
+  rule         MonitoringRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  
+  @@map("scraped_data")
+}
+
+model PriceHistory {
+  id           String   @id @default(cuid())
+  productName  String
+  productUrl   String?
+  
+  // Price Data
+  price        Decimal  @db.Decimal(10, 2)
+  currency     String   @default("USD")
+  originalPrice Decimal? @db.Decimal(10, 2)
+  discount     Decimal? @db.Decimal(5, 2)
+  
+  // Product Details
+  availability String?  // in_stock, out_of_stock, limited, discontinued
+  category     String?
+  
+  // Metadata
+  detectedAt   DateTime
+  createdAt    DateTime @default(now())
+  
+  // Relations
+  competitorId String
+  competitor   Competitor @relation(fields: [competitorId], references: [id], onDelete: Cascade)
+  
+  @@map("price_history")
+}
+
+model SocialMetric {
+  id              String   @id @default(cuid())
+  platform        String   // twitter, facebook, linkedin, instagram, youtube
+  
+  // Metrics
+  followersCount  Int?
+  followingCount  Int?
+  postsCount      Int?
+  engagementRate  Decimal? @db.Decimal(5, 2)
+  avgLikes        Decimal? @db.Decimal(10, 2)
+  avgShares       Decimal? @db.Decimal(10, 2)
+  avgComments     Decimal? @db.Decimal(10, 2)
+  
+  // Content Analysis
+  postFrequency   String?  // daily, weekly, sporadic
+  topHashtags     String[] @default([])
+  sentimentScore  Decimal? @db.Decimal(3, 2)
+  
+  // Metadata
+  measuredAt      DateTime
+  createdAt       DateTime @default(now())
+  
+  // Relations
+  competitorId    String
+  competitor      Competitor @relation(fields: [competitorId], references: [id], onDelete: Cascade)
+  
+  @@map("social_metrics")
+}
+
+// ========================================
+// ALERTS & NOTIFICATIONS
+// ========================================
+
+model Alert {
+  id          String   @id @default(cuid())
+  title       String
+  description String
+  alertType   String   // price_change, new_product, content_change, social_spike, seo_change
+  severity    String   @default("medium") // low, medium, high, critical
+  
+  // Alert Data
+  data        Json
+  changeData  Json?
+  
+  // Status
+  isRead      Boolean  @default(false)
+  isArchived  Boolean  @default(false)
+  
+  // Metadata
+  triggeredAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+  readAt      DateTime?
+  
+  // Relations
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  competitorId   String?
+  competitor     Competitor?  @relation(fields: [competitorId], references: [id], onDelete: SetNull)
+  
+  @@map("alerts")
+}
+
+model NotificationChannel {
+  id       String @id @default(cuid())
+  name     String
+  type     String // email, slack, webhook, discord, teams
+  
+  // Configuration
+  config   Json   // email addresses, webhook URLs, etc.
+  isActive Boolean @default(true)
+  
+  // Filters
+  alertTypes String[] @default([])
+  severity   String[] @default(["medium", "high", "critical"])
+  
+  // Metadata
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Relations
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  @@map("notification_channels")
+}
+
+// ========================================
+// ANALYTICS & REPORTING
+// ========================================
+
+model Report {
+  id          String   @id @default(cuid())
+  name        String
+  type        String   // weekly_summary, competitive_analysis, market_trends, custom
+  
+  // Report Configuration
+  config      Json     // competitors, metrics, date ranges, etc.
+  
+  // Generated Content
+  data        Json?
+  pdfPath     String?
+  
+  // Scheduling
+  isScheduled Boolean  @default(false)
+  schedule    String?  // cron expression
+  
+  // Metadata
+  generatedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  organizationId    String
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  competitorReports CompetitorReport[]
+  
+  @@map("reports")
+}
+
+model CompetitorReport {
+  id           String @id @default(cuid())
+  
+  // Analysis Data
+  analysisData Json
+  insights     String[]
+  trends       Json
+  
+  // Metadata
+  createdAt    DateTime @default(now())
+  
+  // Relations
+  reportId     String
+  report       Report     @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  competitorId String
+  competitor   Competitor @relation(fields: [competitorId], references: [id], onDelete: Cascade)
+  
+  @@map("competitor_reports")
+}
+
+// ========================================
+// API & INTEGRATIONS
+// ========================================
+
+model ApiKey {
+  id          String   @id @default(cuid())
+  name        String
+  key         String   @unique
+  
+  // Permissions
+  permissions String[] @default(["read"])
+  
+  // Usage Tracking
+  usageCount  Int      @default(0)
+  lastUsedAt  DateTime?
+  
+  // Status
+  isActive    Boolean  @default(true)
+  expiresAt   DateTime?
+  
+  // Metadata
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  @@map("api_keys")
+}
+
+model Integration {
+  id       String @id @default(cuid())
+  name     String
+  type     String // slack, zapier, hubspot, salesforce
+  
+  // Configuration
+  config   Json
+  isActive Boolean @default(true)
+  
+  // Metadata
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Relations
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  @@map("integrations")
+}
+
+// ========================================
+// AUDIT & COMPLIANCE
+// ========================================
+
+model AuditLog {
+  id       String   @id @default(cuid())
+  action   String   // create, update, delete, view, export
+  resource String   // competitor, alert, report, user
+  resourceId String?
+  
+  // Details
+  details  Json?
+  metadata Json?
+  
+  // Request Info
+  ipAddress String?
+  userAgent String?
+  
+  // Metadata
+  timestamp DateTime @default(now())
+  
+  // Relations
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String?
+  user           User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  
+  @@map("audit_logs")
+}
+
+// ========================================
+// INDEXES
+// ========================================
+
+// Performance indexes
+@@index([organizationId], map: "idx_competitor_org")
+@@index([competitorId], map: "idx_scraped_data_competitor")
+@@index([scrapedAt], map: "idx_scraped_data_date")
+@@index([detectedAt], map: "idx_price_history_date")
+@@index([triggeredAt], map: "idx_alerts_date")
+@@index([isRead], map: "idx_alerts_read")
+@@index([timestamp], map: "idx_audit_logs_timestamp")

@@ -1,0 +1,54 @@
+{
+  "name": "competitor-analysis-platform",
+  "version": "1.0.0",
+  "description": "Enterprise-grade competitor analysis and market intelligence platform",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\" \"npm run dev:scraper\"",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:scraper": "cd scraper && uvicorn main:app --reload --port 8001",
+    "build": "npm run build:frontend && npm run build:backend",
+    "build:frontend": "cd frontend && npm run build",
+    "build:backend": "cd backend && npm run build",
+    "start": "concurrently \"npm run start:frontend\" \"npm run start:backend\" \"npm run start:scraper\"",
+    "start:frontend": "cd frontend && npm start",
+    "start:backend": "cd backend && npm start",
+    "start:scraper": "cd scraper && uvicorn main:app --host 0.0.0.0 --port 8001",
+    "test": "npm run test:frontend && npm run test:backend && npm run test:scraper",
+    "test:frontend": "cd frontend && npm test",
+    "test:backend": "cd backend && npm test",
+    "test:scraper": "cd scraper && python -m pytest",
+    "lint": "npm run lint:frontend && npm run lint:backend",
+    "lint:frontend": "cd frontend && npm run lint",
+    "lint:backend": "cd backend && npm run lint",
+    "docker:build": "docker-compose build",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "setup": "npm run setup:frontend && npm run setup:backend && npm run setup:scraper",
+    "setup:frontend": "cd frontend && npm install",
+    "setup:backend": "cd backend && npm install",
+    "setup:scraper": "cd scraper && pip install -r requirements.txt"
+  },
+  "keywords": [
+    "competitor-analysis",
+    "market-intelligence",
+    "business-intelligence",
+    "web-scraping",
+    "saas",
+    "enterprise"
+  ],
+  "author": "Competitor Analysis Platform",
+  "license": "MIT",
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  }
+}

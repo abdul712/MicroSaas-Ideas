@@ -1,0 +1,185 @@
+# FastAPI and server dependencies
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-multipart==0.0.6
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# Database and ORM
+asyncpg==0.29.0
+databases[postgresql]==0.8.0
+sqlalchemy[asyncio]==2.0.23
+alembic==1.13.1
+
+# Redis and caching
+redis[hiredis]==5.0.1
+aioredis==2.0.1
+
+# Message queue
+aiokafka==0.9.0
+kafka-python==2.0.2
+
+# Web scraping and automation
+aiohttp==3.9.1
+httpx==0.25.2
+requests==2.31.0
+beautifulsoup4==4.12.2
+lxml==4.9.4
+html5lib==1.1
+playwright==1.40.0
+selenium==4.16.0
+scrapy==2.11.0
+scrapy-playwright==0.0.28
+scrapy-splash==0.8.0
+
+# HTML parsing and content extraction
+readability-lxml==0.8.1
+newspaper3k==0.2.8
+python-dateutil==2.8.2
+pytz==2023.3
+
+# Image processing
+Pillow==10.1.0
+opencv-python==4.8.1.78
+
+# AI and ML libraries
+openai==1.6.1
+transformers==4.36.2
+torch==2.1.2
+numpy==1.25.2
+pandas==2.1.4
+scikit-learn==1.3.2
+nltk==3.8.1
+spacy==3.7.2
+textblob==0.17.1
+vaderSentiment==3.3.2
+
+# Data processing and analysis
+xlsxwriter==3.1.9
+openpyxl==3.1.2
+python-docx==1.1.0
+PyPDF2==3.0.1
+pdfplumber==0.10.3
+
+# Validation and serialization
+pydantic==2.5.2
+pydantic-settings==2.1.0
+marshmallow==3.20.1
+
+# HTTP and API utilities
+httpcore==1.0.2
+httptools==0.6.1
+h11==0.14.0
+websockets==12.0
+
+# Async utilities
+asyncio-throttle==1.0.2
+aiofiles==23.2.1
+aiodns==3.1.1
+
+# Monitoring and logging
+structlog==23.2.0
+rich==13.7.0
+sentry-sdk[fastapi]==1.39.2
+
+# Testing
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-mock==3.12.0
+pytest-cov==4.1.0
+httpx==0.25.2
+factory-boy==3.3.0
+
+# Development tools
+black==23.12.0
+isort==5.13.2
+flake8==6.1.0
+mypy==1.8.0
+pre-commit==3.6.0
+
+# Environment and configuration
+python-dotenv==1.0.0
+pyyaml==6.0.1
+click==8.1.7
+
+# Social media APIs
+tweepy==4.14.0
+facebook-sdk==3.1.0
+linkedin-api==2.2.0
+instagrapi==2.0.0
+
+# SEO and analytics tools
+google-api-python-client==2.111.0
+google-auth-httplib2==0.2.0
+google-auth-oauthlib==1.2.0
+
+# Proxy and rotation
+requests-oauthlib==1.3.1
+fake-useragent==1.4.0
+user-agent==0.1.10
+
+# Security
+cryptography==41.0.8
+bcrypt==4.1.2
+
+# Rate limiting and throttling
+slowapi==0.1.9
+limits==3.7.0
+
+# File handling
+chardet==5.2.0
+magic==0.4.28
+
+# Network utilities
+dnspython==2.4.2
+tldextract==5.1.1
+publicsuffix2==2.20191221
+
+# Data export and import
+jsonlines==4.0.0
+orjson==3.9.10
+
+# Scheduling and cron
+schedule==1.2.0
+croniter==2.0.1
+
+# Browser automation helpers
+selenium-wire==5.1.0
+undetected-chromedriver==3.5.4
+
+# Content similarity and deduplication
+simhash==2.1.2
+xxhash==3.4.1
+
+# Language detection
+langdetect==1.0.9
+polyglot==16.7.4
+
+# Email processing
+email-validator==2.1.0.post1
+imapclient==2.3.1
+
+# Phone number processing
+phonenumbers==8.13.26
+
+# Geographic data
+geoip2==4.7.0
+geopy==2.4.1
+
+# Time series analysis
+statsmodels==0.14.1
+
+# Currency conversion
+forex-python==1.8
+
+# URL utilities
+yarl==1.9.4
+furl==2.1.3
+
+# Memory profiling (development)
+memory-profiler==0.61.0
+psutil==5.9.6
+
+# Documentation
+sphinx==7.2.6
+sphinx-autodoc-typehints==1.25.2
