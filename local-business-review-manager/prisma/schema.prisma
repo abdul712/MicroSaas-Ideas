@@ -1,0 +1,718 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User Management & Authentication
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  TENANT_OWNER
+  TENANT_ADMIN
+  MANAGER
+  STAFF
+  VIEWER
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  role          UserRole  @default(VIEWER)
+  isActive      Boolean   @default(true)
+  
+  // Multi-tenancy
+  tenantId      String?
+  tenant        Tenant?   @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  
+  // Audit fields
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  lastLoginAt   DateTime?
+  
+  accounts      Account[]
+  sessions      Session[]
+  businesses    BusinessUser[]
+  reviewResponses ReviewResponse[]
+  notifications UserNotification[]
+  auditLogs     AuditLog[]
+  
+  @@index([tenantId])
+  @@index([email])
+  @@map("users")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// Multi-tenancy & Business Management
+model Tenant {
+  id            String   @id @default(cuid())
+  name          String
+  slug          String   @unique
+  domain        String?  @unique
+  
+  // Subscription & billing
+  stripeCustomerId     String?   @unique
+  stripeSubscriptionId String?   @unique
+  subscriptionStatus   String?   // active, canceled, past_due, etc.
+  subscriptionPlan     String    @default("starter") // starter, professional, enterprise
+  subscriptionEndsAt   DateTime?
+  
+  // Limits based on plan
+  maxBusinesses        Int       @default(1)
+  maxUsers            Int       @default(3)
+  maxLocations        Int       @default(1)
+  
+  // Features enabled
+  aiResponsesEnabled   Boolean   @default(false)
+  sentimentAnalysisEnabled Boolean @default(false)
+  competitorTrackingEnabled Boolean @default(false)
+  whitelabelEnabled   Boolean   @default(false)
+  
+  // Settings
+  timezone            String    @default("UTC")
+  defaultLanguage     String    @default("en")
+  brandColor          String?
+  brandLogo           String?
+  
+  // Audit
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  users       User[]
+  businesses  Business[]
+  
+  @@index([slug])
+  @@map("tenants")
+}
+
+model Business {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  
+  // Contact information
+  email       String?
+  phone       String?
+  website     String?
+  
+  // Address
+  address     String?
+  city        String?
+  state       String?
+  country     String?
+  postalCode  String?
+  
+  // Coordinates for local SEO
+  latitude    Float?
+  longitude   Float?
+  
+  // Business categories & industries
+  category    String?  // Restaurant, Hotel, Retail, etc.
+  industry    String?
+  
+  // Brand settings
+  logo        String?
+  brandColor  String?
+  
+  // Multi-tenancy
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  // Audit
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  users       BusinessUser[]
+  locations   BusinessLocation[]
+  platforms   ReviewPlatform[]
+  reviews     Review[]
+  responses   ReviewResponse[]
+  campaigns   ReviewCampaign[]
+  notifications BusinessNotification[]
+  
+  @@index([tenantId])
+  @@index([category])
+  @@map("businesses")
+}
+
+model BusinessUser {
+  id         String   @id @default(cuid())
+  businessId String
+  userId     String
+  role       UserRole @default(VIEWER)
+  
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  createdAt  DateTime @default(now())
+  
+  @@unique([businessId, userId])
+  @@map("business_users")
+}
+
+model BusinessLocation {
+  id          String  @id @default(cuid())
+  businessId  String
+  name        String
+  
+  // Location details
+  address     String
+  city        String
+  state       String
+  country     String
+  postalCode  String
+  
+  // Coordinates
+  latitude    Float?
+  longitude   Float?
+  
+  // Platform-specific IDs
+  googlePlaceId      String? @unique
+  facebookPageId     String? @unique
+  yelpBusinessId     String? @unique
+  tripadvisorId      String? @unique
+  
+  // Contact
+  phone       String?
+  email       String?
+  
+  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([businessId])
+  @@index([googlePlaceId])
+  @@map("business_locations")
+}
+
+// Review Platform Integration
+enum PlatformType {
+  GOOGLE
+  FACEBOOK
+  YELP
+  TRIPADVISOR
+  TRUSTPILOT
+  AMAZON
+  CUSTOM
+}
+
+model ReviewPlatform {
+  id              String       @id @default(cuid())
+  businessId      String
+  platform        PlatformType
+  
+  // Platform credentials/tokens (encrypted)
+  accessToken     String?      @db.Text
+  refreshToken    String?      @db.Text
+  apiKey          String?
+  
+  // Platform-specific settings
+  platformBusinessId String?   // Business ID on the platform
+  platformUrl     String?      // Direct URL to business page
+  
+  // Sync settings
+  autoSync        Boolean      @default(true)
+  syncInterval    Int          @default(30) // minutes
+  lastSyncAt      DateTime?
+  
+  // Status
+  isActive        Boolean      @default(true)
+  isConnected     Boolean      @default(false)
+  lastError       String?
+  
+  business        Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  
+  reviews         Review[]
+  
+  @@unique([businessId, platform])
+  @@index([platform])
+  @@map("review_platforms")
+}
+
+// Review Management
+enum ReviewRating {
+  ONE
+  TWO
+  THREE
+  FOUR
+  FIVE
+}
+
+enum ReviewSentiment {
+  VERY_POSITIVE
+  POSITIVE
+  NEUTRAL
+  NEGATIVE
+  VERY_NEGATIVE
+}
+
+enum ReviewStatus {
+  NEW
+  READ
+  RESPONDED
+  FLAGGED
+  ARCHIVED
+}
+
+model Review {
+  id              String          @id @default(cuid())
+  businessId      String
+  platformId      String
+  
+  // Review details
+  platformReviewId String         @unique // ID from the platform
+  reviewerName    String
+  reviewerEmail   String?
+  reviewerAvatar  String?
+  
+  // Review content
+  rating          ReviewRating
+  title           String?
+  content         String         @db.Text
+  
+  // Review metadata
+  reviewDate      DateTime
+  isVerified      Boolean        @default(false)
+  platform        PlatformType
+  platformUrl     String?        // Direct link to review
+  
+  // AI Analysis
+  sentiment       ReviewSentiment?
+  sentimentScore  Float?         // -1 to 1
+  keywords        String[]       // Extracted keywords
+  topics          String[]       // Identified topics/categories
+  
+  // Management
+  status          ReviewStatus   @default(NEW)
+  isPublic        Boolean        @default(true)
+  isFlagged       Boolean        @default(false)
+  flagReason      String?
+  
+  // Relations
+  business        Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  reviewPlatform  ReviewPlatform @relation(fields: [platformId], references: [id], onDelete: Cascade)
+  
+  // Audit
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  
+  responses       ReviewResponse[]
+  
+  @@index([businessId])
+  @@index([platform])
+  @@index([sentiment])
+  @@index([reviewDate])
+  @@index([status])
+  @@map("reviews")
+}
+
+// Review Response Management
+enum ResponseStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  PUBLISHED
+  FAILED
+}
+
+model ReviewResponse {
+  id            String         @id @default(cuid())
+  reviewId      String
+  businessId    String
+  userId        String?        // Who created the response
+  
+  // Response content
+  content       String         @db.Text
+  isAiGenerated Boolean        @default(false)
+  aiPrompt      String?        @db.Text
+  
+  // Management
+  status        ResponseStatus @default(DRAFT)
+  isPublished   Boolean        @default(false)
+  publishedAt   DateTime?
+  
+  // Platform publishing
+  platformResponseId String?   // ID from platform after publishing
+  publishError  String?
+  
+  // Relations
+  review        Review         @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  business      Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  author        User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  
+  @@index([reviewId])
+  @@index([businessId])
+  @@index([status])
+  @@map("review_responses")
+}
+
+// Review Invitation & Campaign Management
+enum CampaignType {
+  EMAIL
+  SMS
+  QR_CODE
+  LINK
+  WIDGET
+}
+
+enum CampaignStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  COMPLETED
+  ARCHIVED
+}
+
+model ReviewCampaign {
+  id            String         @id @default(cuid())
+  businessId    String
+  
+  // Campaign details
+  name          String
+  description   String?
+  type          CampaignType
+  
+  // Content
+  subject       String?        // For email campaigns
+  message       String         @db.Text
+  ctaText       String         @default("Leave a Review")
+  
+  // Targeting
+  targetRating  Int?           // Only ask customers with rating >= this
+  
+  // Timing
+  triggerDelay  Int            @default(24) // Hours after service/purchase
+  reminderDelay Int?           // Hours for reminder
+  
+  // Settings
+  status        CampaignStatus @default(DRAFT)
+  isActive      Boolean        @default(false)
+  
+  // Limits
+  maxInvitations Int?
+  dailyLimit     Int?
+  
+  // Relations
+  business      Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  
+  invitations   ReviewInvitation[]
+  
+  @@index([businessId])
+  @@index([status])
+  @@map("review_campaigns")
+}
+
+enum InvitationStatus {
+  PENDING
+  SENT
+  OPENED
+  CLICKED
+  REVIEWED
+  FAILED
+  EXPIRED
+}
+
+model ReviewInvitation {
+  id              String           @id @default(cuid())
+  campaignId      String
+  
+  // Customer details
+  customerName    String
+  customerEmail   String?
+  customerPhone   String?
+  
+  // Invitation details
+  inviteCode      String           @unique
+  inviteUrl       String
+  
+  // Tracking
+  status          InvitationStatus @default(PENDING)
+  sentAt          DateTime?
+  openedAt        DateTime?
+  clickedAt       DateTime?
+  reviewedAt      DateTime?
+  
+  // Metadata
+  userAgent       String?
+  ipAddress       String?
+  
+  campaign        ReviewCampaign   @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  
+  @@index([campaignId])
+  @@index([inviteCode])
+  @@index([status])
+  @@map("review_invitations")
+}
+
+// Analytics & Reporting
+model ReviewAnalytics {
+  id                    String   @id @default(cuid())
+  businessId            String
+  date                  DateTime @db.Date
+  
+  // Review metrics
+  totalReviews          Int      @default(0)
+  newReviews            Int      @default(0)
+  averageRating         Float    @default(0)
+  
+  // Rating distribution
+  oneStarReviews        Int      @default(0)
+  twoStarReviews        Int      @default(0)
+  threeStarReviews      Int      @default(0)
+  fourStarReviews       Int      @default(0)
+  fiveStarReviews       Int      @default(0)
+  
+  // Sentiment metrics
+  positiveReviews       Int      @default(0)
+  neutralReviews        Int      @default(0)
+  negativeReviews       Int      @default(0)
+  
+  // Response metrics
+  responseRate          Float    @default(0)
+  avgResponseTime       Float?   // Hours
+  
+  // Platform breakdown
+  googleReviews         Int      @default(0)
+  facebookReviews       Int      @default(0)
+  yelpReviews          Int      @default(0)
+  tripadvisorReviews   Int      @default(0)
+  
+  createdAt            DateTime @default(now())
+  
+  @@unique([businessId, date])
+  @@index([businessId])
+  @@index([date])
+  @@map("review_analytics")
+}
+
+// Notifications & Alerts
+enum NotificationType {
+  NEW_REVIEW
+  NEGATIVE_REVIEW
+  RESPONSE_NEEDED
+  CAMPAIGN_COMPLETED
+  SYNC_ERROR
+  SYSTEM_ALERT
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  SMS
+  WEBHOOK
+}
+
+model UserNotification {
+  id          String              @id @default(cuid())
+  userId      String
+  
+  type        NotificationType
+  title       String
+  message     String              @db.Text
+  
+  // Delivery
+  channels    NotificationChannel[]
+  isRead      Boolean             @default(false)
+  readAt      DateTime?
+  
+  // Metadata
+  metadata    Json?               // Additional data as JSON
+  
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  createdAt   DateTime            @default(now())
+  
+  @@index([userId])
+  @@index([isRead])
+  @@map("user_notifications")
+}
+
+model BusinessNotification {
+  id          String              @id @default(cuid())
+  businessId  String
+  
+  type        NotificationType
+  title       String
+  message     String              @db.Text
+  
+  // Targeting
+  targetRoles UserRole[]
+  
+  // Delivery
+  channels    NotificationChannel[]
+  
+  // Metadata
+  metadata    Json?
+  
+  business    Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  
+  createdAt   DateTime            @default(now())
+  
+  @@index([businessId])
+  @@map("business_notifications")
+}
+
+// Audit & Compliance
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  EXPORT
+  VIEW_SENSITIVE
+  RESPOND_REVIEW
+  DELETE_REVIEW
+}
+
+model AuditLog {
+  id          String      @id @default(cuid())
+  userId      String?
+  action      AuditAction
+  resource    String      // Table or entity name
+  resourceId  String?     // ID of the affected resource
+  
+  // Details
+  oldValues   Json?       // Previous state
+  newValues   Json?       // New state
+  metadata    Json?       // Additional context
+  
+  // Context
+  ipAddress   String?
+  userAgent   String?
+  
+  user        User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  
+  createdAt   DateTime    @default(now())
+  
+  @@index([userId])
+  @@index([action])
+  @@index([resource])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// AI & Automation
+model AiResponseTemplate {
+  id            String   @id @default(cuid())
+  businessId    String?  // Null for global templates
+  
+  name          String
+  description   String?
+  
+  // Template content
+  prompt        String   @db.Text
+  template      String   @db.Text
+  
+  // Conditions
+  minRating     Int?     // Apply to reviews with rating >= this
+  maxRating     Int?     // Apply to reviews with rating <= this
+  keywords      String[] // Apply when review contains these keywords
+  sentiment     ReviewSentiment?
+  
+  // Settings
+  isActive      Boolean  @default(true)
+  priority      Int      @default(0) // Higher priority templates used first
+  
+  // Usage stats
+  usageCount    Int      @default(0)
+  successRate   Float    @default(0)
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  @@index([businessId])
+  @@index([isActive])
+  @@map("ai_response_templates")
+}
+
+// Integration & Webhooks
+model Webhook {
+  id          String   @id @default(cuid())
+  businessId  String?  // Null for tenant-level webhooks
+  tenantId    String?
+  
+  name        String
+  url         String
+  secret      String?
+  
+  // Events to listen for
+  events      String[] // new_review, new_response, etc.
+  
+  // Configuration
+  isActive    Boolean  @default(true)
+  retryCount  Int      @default(3)
+  timeout     Int      @default(30) // seconds
+  
+  // Stats
+  totalCalls  Int      @default(0)
+  successCalls Int     @default(0)
+  lastCalledAt DateTime?
+  lastError   String?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([businessId])
+  @@index([tenantId])
+  @@map("webhooks")
+}
