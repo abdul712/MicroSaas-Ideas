@@ -1,0 +1,216 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: fraudshield
+      POSTGRES_USER: fraudshield
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secure_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fraudshield"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis Cache & Session Store
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redis_secure}
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # InfluxDB for Time-Series Analytics
+  influxdb:
+    image: influxdb:2.7
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: admin
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUXDB_PASSWORD:-admin_password}
+      DOCKER_INFLUXDB_INIT_ORG: fraudshield
+      DOCKER_INFLUXDB_INIT_BUCKET: fraud_analytics
+    volumes:
+      - influxdb_data:/var/lib/influxdb2
+    ports:
+      - "8086:8086"
+
+  # Apache Kafka for Event Streaming
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  # FastAPI Fraud Detection Service
+  fraud-api:
+    build:
+      context: ./services/fraud-detection
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql://fraudshield:${POSTGRES_PASSWORD:-secure_password}@postgres:5432/fraudshield
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secure}@redis:6379/0
+      INFLUXDB_URL: http://influxdb:8086
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      ML_SERVICE_URL: http://ml-service:8001
+      JWT_SECRET: ${JWT_SECRET:-your-super-secure-jwt-secret-key}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-your-32-byte-encryption-key-here}
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+      - redis
+      - kafka
+      - ml-service
+    volumes:
+      - ./services/fraud-detection:/app
+      - ./shared:/app/shared
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ML Service for Model Inference
+  ml-service:
+    build:
+      context: ./services/ml-service
+      dockerfile: Dockerfile
+    environment:
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secure}@redis:6379/1
+      MODEL_STORE_PATH: /app/models
+      FEATURE_STORE_URL: redis://:${REDIS_PASSWORD:-redis_secure}@redis:6379/2
+    ports:
+      - "8001:8001"
+    depends_on:
+      - redis
+    volumes:
+      - ./services/ml-service:/app
+      - ./shared:/app/shared
+      - ml_models:/app/models
+
+  # Kong API Gateway
+  kong:
+    image: kong:3.4
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /kong/declarative/kong.yml
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_LISTEN: 0.0.0.0:8001
+    ports:
+      - "8080:8000"
+      - "8443:8443"
+      - "8001:8001"
+      - "8444:8444"
+    volumes:
+      - ./kong/kong.yml:/kong/declarative/kong.yml
+    depends_on:
+      - fraud-api
+
+  # Prometheus Monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+
+  # Grafana Dashboard
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin_password}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+
+  # Elasticsearch for Logging
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    environment:
+      discovery.type: single-node
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+      xpack.security.enabled: false
+    ports:
+      - "9200:9200"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+
+  # Kibana for Log Visualization
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.0
+    ports:
+      - "5601:5601"
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    depends_on:
+      - elasticsearch
+
+  # Frontend Dashboard
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3000"
+    environment:
+      REACT_APP_API_URL: http://localhost:8080
+      REACT_APP_WS_URL: ws://localhost:8080
+    depends_on:
+      - kong
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+
+volumes:
+  postgres_data:
+  redis_data:
+  influxdb_data:
+  ml_models:
+  prometheus_data:
+  grafana_data:
+  elasticsearch_data:
+
+networks:
+  default:
+    name: fraudshield-network
